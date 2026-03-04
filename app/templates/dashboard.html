@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — CloudInventory{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center mb-4 gap-2">
+  <h1 class="mb-0"><i class="bi bi-speedometer2 me-2"></i>Dashboard</h1>
+  <button id="btn-run" class="btn btn-primary" onclick="launchRun()">
+    <i class="bi bi-play-fill me-1"></i>Lancer un inventaire
+  </button>
+</div>
+
+<!-- Spinner -->
+<div id="run-loading" class="alert alert-info d-none">
+  <div class="d-flex align-items-center">
+    <div class="spinner-border spinner-border-sm me-2" role="status"><span class="visually-hidden">Chargement</span></div>
+    <span>Inventaire en cours...</span>
+  </div>
+</div>
+<div id="run-result" class="d-none"></div>
+
+<!-- Stats cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-primary">{{ run.vm_count if run else 0 }}</div>
+        <small class="text-muted"><i class="bi bi-hdd-stack me-1"></i>VMs collectees</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-success">{{ run.matched_name_count if run else 0 }}</div>
+        <small class="text-muted"><i class="bi bi-check-circle me-1"></i>Matched</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-danger">{{ run.no_match_count if run else 0 }}</div>
+        <small class="text-muted"><i class="bi bi-x-circle me-1"></i>No match</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-warning">{{ total_anomalies }}</div>
+        <small class="text-muted"><i class="bi bi-exclamation-triangle me-1"></i>Anomalies</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if run %}
+<!-- Dernier run -->
+<div class="card mb-4">
+  <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-clock-history me-1"></i>Dernier run <strong>#{{ run.id }}</strong></span>
+    {% if run.status == 'SUCCESS' %}<span class="badge badge-success">SUCCESS</span>
+    {% elif run.status == 'FAIL' %}<span class="badge badge-fail">FAIL</span>
+    {% else %}<span class="badge badge-running">RUNNING</span>{% endif %}
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-sm-6">
+        <small class="text-muted">Debut</small><br>
+        <strong>{{ run.started_at.strftime('%d/%m/%Y %H:%M:%S') if run.started_at else '—' }}</strong>
+      </div>
+      <div class="col-sm-6 mt-2 mt-sm-0">
+        <small class="text-muted">Fin</small><br>
+        <strong>{{ run.ended_at.strftime('%d/%m/%Y %H:%M:%S') if run.ended_at else '—' }}</strong>
+      </div>
+    </div>
+    {% if run.error_message %}
+    <div class="alert alert-danger mt-3 mb-0">{{ run.error_message }}</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Graphiques -->
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-4">
+    <div class="card h-100">
+      <div class="card-body p-3">
+        <h6 class="text-center mb-3"><i class="bi bi-pie-chart me-1"></i>Correspondances</h6>
+        <canvas id="chartMatch"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="card h-100">
+      <div class="card-body p-3">
+        <h6 class="text-center mb-3"><i class="bi bi-exclamation-diamond me-1"></i>Anomalies par type</h6>
+        <canvas id="chartAnomalies"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="card h-100">
+      <div class="card-body p-3">
+        <h6 class="text-center mb-3"><i class="bi bi-graph-up me-1"></i>Evolution des runs</h6>
+        <canvas id="chartEvolution"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info"><i class="bi bi-info-circle me-1"></i>Aucun run effectue. Lancez un inventaire pour commencer.</div>
+{% endif %}
+
+<!-- Navigation rapide -->
+<div class="row g-3">
+  <div class="col-12 col-sm-4">
+    <a href="{{ url_for('main.inventory') }}" class="btn btn-outline-primary w-100 py-2">
+      <i class="bi bi-server me-1"></i>Inventaire
+    </a>
+  </div>
+  <div class="col-12 col-sm-4">
+    <a href="{{ url_for('main.runs_list') }}" class="btn btn-outline-primary w-100 py-2">
+      <i class="bi bi-play-circle me-1"></i>Historique des runs
+    </a>
+  </div>
+  <div class="col-12 col-sm-4">
+    <a href="{{ url_for('main.anomalies_list') }}" class="btn btn-outline-primary w-100 py-2">
+      <i class="bi bi-exclamation-triangle me-1"></i>Anomalies
+    </a>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+function launchRun() {
+  var btn = document.getElementById('btn-run');
+  var loading = document.getElementById('run-loading');
+  var result = document.getElementById('run-result');
+  btn.disabled = true;
+  loading.classList.remove('d-none');
+  result.classList.add('d-none');
+
+  fetch('{{ url_for("main.api_trigger_run") }}', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      loading.classList.add('d-none');
+      if (data.status === 'SUCCESS') {
+        result.className = 'alert alert-success';
+        result.innerHTML = '<i class="bi bi-check-circle me-1"></i>Run #' + data.id + ' — ' +
+          data.matched_name_count + ' matched, ' + data.no_match_count + ' no match. <a href="/runs/' + data.id + '">Voir le detail</a>';
+      } else {
+        result.className = 'alert alert-danger';
+        result.innerHTML = '<i class="bi bi-x-circle me-1"></i>Run #' + data.id + ' echoue : ' + (data.error_message || 'Erreur inconnue');
+      }
+      result.classList.remove('d-none');
+      btn.disabled = false;
+      setTimeout(function() { location.reload(); }, 2000);
+    })
+    .catch(function() {
+      loading.classList.add('d-none');
+      result.className = 'alert alert-danger';
+      result.innerHTML = 'Erreur reseau';
+      result.classList.remove('d-none');
+      btn.disabled = false;
+    });
+}
+
+{% if run %}
+fetch('{{ url_for("main.api_stats") }}')
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (!data.has_data) return;
+    var chartOpts = {responsive: true, maintainAspectRatio: true, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 10, font: {size: 11}}}}};
+    new Chart(document.getElementById('chartMatch'), {
+      type: 'doughnut',
+      data: {labels: ['Matched', 'No Match'], datasets: [{data: [data.match.matched, data.match.no_match], backgroundColor: ['#198754', '#dc3545'], borderWidth: 0}]},
+      options: chartOpts
+    });
+    var aLabels = Object.keys(data.anomalies);
+    var aValues = Object.values(data.anomalies);
+    var aColors = aLabels.map(function(_, i) { return ['#dc3545','#ffc107','#0d6efd','#6f42c1','#fd7e14'][i % 5]; });
+    new Chart(document.getElementById('chartAnomalies'), {
+      type: 'doughnut',
+      data: {labels: aLabels.length ? aLabels : ['Aucune'], datasets: [{data: aValues.length ? aValues : [1], backgroundColor: aValues.length ? aColors : ['#dee2e6'], borderWidth: 0}]},
+      options: chartOpts
+    });
+    new Chart(document.getElementById('chartEvolution'), {
+      type: 'line',
+      data: {labels: data.evolution.labels, datasets: [
+        {label: 'Matched', data: data.evolution.matched, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', fill: true, tension: 0.3, pointRadius: 4},
+        {label: 'No Match', data: data.evolution.no_match, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', fill: true, tension: 0.3, pointRadius: 4},
+      ]},
+      options: {responsive: true, maintainAspectRatio: true, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 10, font: {size: 11}}}}, scales: {y: {beginAtZero: true}}}
+    });
+  });
+{% endif %}
+</script>
+{% endblock %}

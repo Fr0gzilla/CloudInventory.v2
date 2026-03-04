@@ -1,0 +1,13 @@
+.env
+.venv*
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+instance/
+*.sqlite3
+.DS_Store
+.pytest_cache/
+.claude/
+netbox-docker/

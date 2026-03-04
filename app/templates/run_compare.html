@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Comparaison de runs — CloudInventory{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <a href="{{ url_for('main.runs_list') }}" class="btn btn-sm btn-outline-secondary" title="Retour runs">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h1 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Comparaison de runs</h1>
+</div>
+
+<!-- Selecteurs -->
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-5 col-md-4 col-lg-3">
+        <label for="sel-run1" class="form-label small text-muted mb-1">Run ancien</label>
+        <select id="sel-run1" name="run1" class="form-select form-select-sm" required>
+          <option value="">Choisir...</option>
+          {% for r in all_runs %}
+          <option value="{{ r.id }}" {% if run1_id is defined and run1_id == r.id %}selected{% endif %}>
+            #{{ r.id }} — {{ r.started_at.strftime('%d/%m/%Y %H:%M') if r.started_at else '?' }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-5 col-md-4 col-lg-3">
+        <label for="sel-run2" class="form-label small text-muted mb-1">Run recent</label>
+        <select id="sel-run2" name="run2" class="form-select form-select-sm" required>
+          <option value="">Choisir...</option>
+          {% for r in all_runs %}
+          <option value="{{ r.id }}" {% if run2_id is defined and run2_id == r.id %}selected{% endif %}>
+            #{{ r.id }} — {{ r.started_at.strftime('%d/%m/%Y %H:%M') if r.started_at else '?' }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-2 col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-arrow-left-right me-1 d-none d-md-inline"></i>Comparer
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if run1 and run2 %}
+<!-- Resume -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-success">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-success">{{ added|length }}</div>
+        <small class="text-muted"><i class="bi bi-plus-circle me-1"></i>VM ajoutees</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-danger">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-danger">{{ removed|length }}</div>
+        <small class="text-muted"><i class="bi bi-dash-circle me-1"></i>VM supprimees</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100 border-warning">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold text-warning">{{ changed|length }}</div>
+        <small class="text-muted"><i class="bi bi-pencil-square me-1"></i>VM modifiees</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-5 fw-bold text-body">
+          #{{ run1.id }} <i class="bi bi-arrow-right"></i> #{{ run2.id }}
+        </div>
+        <small class="text-muted">{{ run1.started_at.strftime('%d/%m') if run1.started_at else '?' }} &rarr; {{ run2.started_at.strftime('%d/%m') if run2.started_at else '?' }}</small>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if added %}
+<h2 class="mb-3"><i class="bi bi-plus-circle text-success me-2"></i>VMs ajoutees <span class="badge bg-success">{{ added|length }}</span></h2>
+<div class="card mb-4">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>VM</th>
+          <th>Status</th>
+          <th>IP</th>
+          <th>Match</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for asset, ca in added %}
+        <tr class="table-success">
+          <td><a href="{{ url_for('main.asset_detail', asset_id=asset.id) }}" class="fw-semibold text-decoration-none">{{ asset.vm_name }}</a></td>
+          <td><span class="badge bg-{{ 'success' if asset.status == 'running' else 'secondary' }}">{{ asset.status }}</span></td>
+          <td><code class="small">{{ ca.ip_final or '—' }}</code></td>
+          <td>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
+            {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if removed %}
+<h2 class="mb-3"><i class="bi bi-dash-circle text-danger me-2"></i>VMs supprimees <span class="badge bg-danger">{{ removed|length }}</span></h2>
+<div class="card mb-4">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>VM</th>
+          <th>Status</th>
+          <th>IP</th>
+          <th>Match</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for asset, ca in removed %}
+        <tr class="table-danger">
+          <td><a href="{{ url_for('main.asset_detail', asset_id=asset.id) }}" class="fw-semibold text-decoration-none">{{ asset.vm_name }}</a></td>
+          <td><span class="badge bg-{{ 'success' if asset.status == 'running' else 'secondary' }}">{{ asset.status }}</span></td>
+          <td><code class="small">{{ ca.ip_final or '—' }}</code></td>
+          <td>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
+            {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if changed %}
+<h2 class="mb-3"><i class="bi bi-pencil-square text-warning me-2"></i>VMs modifiees <span class="badge bg-warning text-dark">{{ changed|length }}</span></h2>
+<div class="card mb-4">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>VM</th>
+          <th>Champ</th>
+          <th>Avant (run #{{ run1.id }})</th>
+          <th>Apres (run #{{ run2.id }})</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for asset, diffs in changed %}
+        {% for field, before, after in diffs %}
+        <tr class="table-warning">
+          {% if loop.first %}
+          <td rowspan="{{ diffs|length }}">
+            <a href="{{ url_for('main.asset_detail', asset_id=asset.id) }}" class="fw-semibold text-decoration-none">{{ asset.vm_name }}</a>
+          </td>
+          {% endif %}
+          <td><span class="badge bg-dark bg-opacity-10 text-body">{{ field }}</span></td>
+          <td><code class="small text-danger">{{ before }}</code></td>
+          <td><code class="small text-success">{{ after }}</code></td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if not added and not removed and not changed %}
+<div class="alert alert-success"><i class="bi bi-check-circle me-1"></i>Aucune difference entre les deux runs.</div>
+{% endif %}
+
+{% elif not run1 and not run2 %}
+<div class="alert alert-info"><i class="bi bi-info-circle me-1"></i>Selectionnez deux runs a comparer.</div>
+{% endif %}
+{% endblock %}

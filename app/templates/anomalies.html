@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Anomalies — CloudInventory{% endblock %}
+
+{% block content %}
+<h1 class="mb-4"><i class="bi bi-exclamation-triangle me-2"></i>Anomalies</h1>
+
+<!-- Filtres -->
+<div class="card mb-4">
+  <div class="card-body py-3">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-6 col-md-4 col-lg-3">
+        <label for="f-atype" class="form-label small text-muted mb-1">Type</label>
+        <select id="f-atype" name="type" class="form-select form-select-sm">
+          <option value="">Tous</option>
+          {% for t in types %}
+          <option value="{{ t }}" {% if anomaly_type == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-4 col-lg-3">
+        <label for="f-arun" class="form-label small text-muted mb-1">Run</label>
+        <select id="f-arun" name="run" class="form-select form-select-sm">
+          <option value="">Tous</option>
+          {% for r in run_ids %}
+          <option value="{{ r }}" {% if run_id|string == r|string %}selected{% endif %}>Run #{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100">
+          <i class="bi bi-funnel me-1"></i>Filtrer
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if items %}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover table-sm mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th class="d-none d-md-table-cell">Date</th>
+          <th>VM</th>
+          <th>Type</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for anomaly, asset, run in items %}
+        <tr>
+          <td class="d-none d-md-table-cell">{{ run.started_at.strftime('%d/%m/%Y %H:%M') if run.started_at else '—' }}</td>
+          <td><a href="{{ url_for('main.asset_detail', asset_id=asset.id) }}" class="text-decoration-none fw-semibold">{{ asset.vm_name }}</a></td>
+          <td>
+            {% if anomaly.type == 'NO_MATCH' %}<span class="badge bg-danger">{{ anomaly.type }}</span>
+            {% elif anomaly.type == 'STATUS_MISMATCH' %}<span class="badge bg-warning text-dark">{{ anomaly.type }}</span>
+            {% elif anomaly.type == 'DUPLICATE_DNS' %}<span class="badge bg-primary">{{ anomaly.type }}</span>
+            {% elif anomaly.type == 'DUPLICATE_IP' %}<span class="badge bg-info text-dark">{{ anomaly.type }}</span>
+            {% else %}<span class="badge bg-secondary">{{ anomaly.type }}</span>{% endif %}
+          </td>
+          <td class="small">{{ anomaly.details }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination and pagination.pages > 1 %}
+<nav class="d-flex justify-content-between align-items-center mt-3">
+  <small class="text-muted">{{ pagination.total }} anomalie(s) — page {{ pagination.page }}/{{ pagination.pages }}</small>
+  <ul class="pagination pagination-sm mb-0">
+    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+      <a class="page-link" href="?page={{ pagination.prev_num }}{% if anomaly_type %}&type={{ anomaly_type }}{% endif %}{% if run_id %}&run={{ run_id }}{% endif %}">&laquo;</a>
+    </li>
+    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if p %}
+      <li class="page-item {% if p == pagination.page %}active{% endif %}">
+        <a class="page-link" href="?page={{ p }}{% if anomaly_type %}&type={{ anomaly_type }}{% endif %}{% if run_id %}&run={{ run_id }}{% endif %}">{{ p }}</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled"><span class="page-link">...</span></li>
+      {% endif %}
+    {% endfor %}
+    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+      <a class="page-link" href="?page={{ pagination.next_num }}{% if anomaly_type %}&type={{ anomaly_type }}{% endif %}{% if run_id %}&run={{ run_id }}{% endif %}">&raquo;</a>
+    </li>
+  </ul>
+</nav>
+{% elif pagination %}
+<p class="text-muted mt-2 small">{{ pagination.total }} anomalie(s)</p>
+{% endif %}
+
+{% else %}
+<p class="text-muted">Aucune anomalie.</p>
+{% endif %}
+{% endblock %}
