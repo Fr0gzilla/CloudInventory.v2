@@ -199,7 +199,7 @@
       if (sort) params.set('sort', sort);
       if (order) params.set('order', order);
 
-      fetch('{{ url_for("main.api_inventory_search") }}?' + params.toString())
+      fetch('{{ url_for("main.ajax_inventory_search") }}?' + params.toString())
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (!data.items) return;

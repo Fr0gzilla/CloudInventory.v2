@@ -140,17 +140,17 @@ function launchRun() {
   loading.classList.remove('d-none');
   result.classList.add('d-none');
 
-  fetch('{{ url_for("main.api_trigger_run") }}', {method: 'POST'})
+  fetch('{{ url_for("main.ajax_trigger_run") }}', {method: 'POST'})
     .then(function(r) { return r.json(); })
     .then(function(data) {
       loading.classList.add('d-none');
       if (data.status === 'SUCCESS') {
         result.className = 'alert alert-success';
         result.innerHTML = '<i class="bi bi-check-circle me-1"></i>Run #' + data.id + ' — ' +
-          data.matched_name_count + ' matched, ' + data.no_match_count + ' no match. <a href="/runs/' + data.id + '">Voir le detail</a>';
+          data.matched_name_count + ' matched, ' + data.no_match_count + ' no match. <a href="/runs/' + data.id + '">Voir le détail</a>';
       } else {
         result.className = 'alert alert-danger';
-        result.innerHTML = '<i class="bi bi-x-circle me-1"></i>Run #' + data.id + ' echoue : ' + (data.error_message || 'Erreur inconnue');
+        result.innerHTML = '<i class="bi bi-x-circle me-1"></i>Run #' + data.id + ' échoué : ' + (data.error_message || 'Erreur inconnue');
       }
       result.classList.remove('d-none');
       btn.disabled = false;
@@ -159,14 +159,14 @@ function launchRun() {
     .catch(function() {
       loading.classList.add('d-none');
       result.className = 'alert alert-danger';
-      result.innerHTML = 'Erreur reseau';
+      result.innerHTML = 'Erreur réseau';
       result.classList.remove('d-none');
       btn.disabled = false;
     });
 }
 
 {% if run %}
-fetch('{{ url_for("main.api_stats") }}')
+fetch('{{ url_for("main.ajax_stats") }}')
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (!data.has_data) return;

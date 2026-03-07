@@ -311,25 +311,34 @@ class TestRoutes:
 
 class TestAPI:
 
+    def _get_token(self, client):
+        resp = client.post("/api/login", json={
+            "username": "admin", "password": "admin"
+        })
+        return resp.get_json()["access_token"]
+
+    def _auth(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
     def test_api_stats_empty(self, client, app):
-        _login(client)
-        resp = client.get("/api/stats")
+        token = self._get_token(client)
+        resp = client.get("/api/stats", headers=self._auth(token))
         data = resp.get_json()
         assert data["has_data"] is False
 
     def test_api_stats_with_data(self, client, app):
-        _login(client)
+        token = self._get_token(client)
         with app.app_context():
             _create_run()
             db.session.commit()
-        resp = client.get("/api/stats")
+        resp = client.get("/api/stats", headers=self._auth(token))
         data = resp.get_json()
         assert data["has_data"] is True
         assert "match" in data
         assert "evolution" in data
 
-    def test_api_inventory_search(self, client, app):
-        _login(client)
+    def test_api_inventory_with_data(self, client, app):
+        token = self._get_token(client)
         with app.app_context():
             run = _create_run()
             asset = _create_asset(vm_name="web-server")
@@ -340,14 +349,14 @@ class TestAPI:
             )
             db.session.add(ca)
             db.session.commit()
-        resp = client.get("/api/inventory/search?q=web")
+        resp = client.get("/api/inventory?q=web", headers=self._auth(token))
         data = resp.get_json()
         assert data["total"] == 1
         assert data["items"][0]["vm_name"] == "web-server"
 
-    def test_api_inventory_search_empty(self, client, app):
-        _login(client)
-        resp = client.get("/api/inventory/search?q=nothing")
+    def test_api_inventory_empty(self, client, app):
+        token = self._get_token(client)
+        resp = client.get("/api/inventory", headers=self._auth(token))
         data = resp.get_json()
         assert data["total"] == 0
 

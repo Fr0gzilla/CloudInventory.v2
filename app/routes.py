@@ -1,4 +1,4 @@
-"""Routes Flask — dashboard, runs, inventory, assets, anomalies, API."""
+"""Routes Flask — dashboard, runs, inventory, assets, anomalies, AJAX."""
 
 import csv
 import io
@@ -6,58 +6,15 @@ from flask import Blueprint, render_template, redirect, url_for, request, jsonif
 from flask_login import login_required
 from app import db
 from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
+from app.queries import build_inventory_query, ram_percent, disk_percent
 
 main_bp = Blueprint("main", __name__)
 
 PER_PAGE = 25
 
 
-def _build_inventory_query(run_id, q="", status="", node="", vm_type="",
-                           match="", tag="", sort="vm_name", order="asc"):
-    """Construit la requete inventaire avec filtres et tri."""
-    query = (
-        db.session.query(ConsolidatedAsset, Asset, IpamRecord)
-        .join(Asset, ConsolidatedAsset.asset_id == Asset.id)
-        .outerjoin(IpamRecord, ConsolidatedAsset.ipam_record_id == IpamRecord.id)
-        .filter(ConsolidatedAsset.run_id == run_id)
-    )
-
-    if q:
-        pattern = f"%{q}%"
-        query = query.filter(
-            db.or_(
-                Asset.vm_name.ilike(pattern),
-                ConsolidatedAsset.ip_final.ilike(pattern),
-                ConsolidatedAsset.dns_final.ilike(pattern),
-            )
-        )
-    if status:
-        query = query.filter(Asset.status == status)
-    if node:
-        query = query.filter(Asset.node == node)
-    if vm_type:
-        query = query.filter(Asset.type == vm_type)
-    if match:
-        query = query.filter(ConsolidatedAsset.match_status == match)
-    if tag:
-        query = query.filter(Asset.tags.ilike(f"%{tag}%"))
-
-    sort_map = {
-        "vm_name": Asset.vm_name,
-        "status": Asset.status,
-        "ip": ConsolidatedAsset.ip_final,
-        "cpu": Asset.cpu_usage,
-        "ram": Asset.ram_used,
-        "match": ConsolidatedAsset.match_status,
-    }
-    sort_col = sort_map.get(sort, Asset.vm_name)
-    query = query.order_by(sort_col.desc() if order == "desc" else sort_col.asc())
-
-    return query
-
-
 def _get_tag_filters():
-    """Extrait les categories et valeurs de tags pour les filtres."""
+    """Extrait les catégories et valeurs de tags pour les filtres."""
     all_tags = [r[0] for r in db.session.query(Asset.tags).filter(Asset.tags.isnot(None)).distinct().all()]
     categories = {}
     for tags_str in all_tags:
@@ -84,10 +41,10 @@ def dashboard():
     )
 
 
-# ---------- API : lancer inventaire (AJAX) ----------
-@main_bp.route("/api/run", methods=["POST"])
+# ---------- AJAX : lancer inventaire ----------
+@main_bp.route("/ajax/run", methods=["POST"])
 @login_required
-def api_trigger_run():
+def ajax_trigger_run():
     from collector.inventory_runner import run_inventory
     run = run_inventory()
     return jsonify({
@@ -110,10 +67,10 @@ def trigger_run():
     return redirect(url_for("main.run_detail", run_id=run.id))
 
 
-# ---------- API : stats dashboard ----------
-@main_bp.route("/api/stats")
+# ---------- AJAX : stats dashboard ----------
+@main_bp.route("/ajax/stats")
 @login_required
-def api_stats():
+def ajax_stats():
     last_run = Run.query.order_by(Run.id.desc()).first()
     if not last_run:
         return jsonify({"has_data": False})
@@ -157,7 +114,7 @@ def runs_list():
     return render_template("runs.html", runs=pagination.items, pagination=pagination, all_runs=all_runs)
 
 
-# ---------- Detail d'un run ----------
+# ---------- Détail d'un run ----------
 @main_bp.route("/runs/<int:run_id>")
 @login_required
 def run_detail(run_id):
@@ -202,7 +159,7 @@ def inventory():
     order = request.args.get("order", "asc")
     page = request.args.get("page", 1, type=int)
 
-    query = _build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
+    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
     pagination = query.paginate(page=page, per_page=PER_PAGE, error_out=False)
 
     filters = {
@@ -222,10 +179,10 @@ def inventory():
     )
 
 
-# ---------- API : recherche live inventaire ----------
-@main_bp.route("/api/inventory/search")
+# ---------- AJAX : recherche live inventaire ----------
+@main_bp.route("/ajax/inventory/search")
 @login_required
-def api_inventory_search():
+def ajax_inventory_search():
     last_run = Run.query.order_by(Run.id.desc()).first()
     if not last_run:
         return jsonify({"items": [], "total": 0})
@@ -239,12 +196,11 @@ def api_inventory_search():
     sort = request.args.get("sort", "vm_name")
     order = request.args.get("order", "asc")
 
-    query = _build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
+    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
     results = query.limit(100).all()
 
     items = []
     for ca, asset, ipam in results:
-        ram_pct = round(asset.ram_used / asset.ram_max * 100) if asset.ram_max and asset.ram_max > 0 else None
         items.append({
             "id": asset.id,
             "vm_name": asset.vm_name,
@@ -254,7 +210,7 @@ def api_inventory_search():
             "tenant": ipam.tenant if ipam else None,
             "site": ipam.site if ipam else None,
             "cpu_usage": asset.cpu_usage,
-            "ram_pct": ram_pct,
+            "ram_pct": ram_percent(asset),
             "match_status": ca.match_status,
         })
 
@@ -281,8 +237,6 @@ def inventory_export():
     writer = csv.writer(output, delimiter=";")
     writer.writerow(["VM", "Node", "Status", "Type", "IP", "DNS", "Statut IP", "Tenant", "Site", "CPU (%)", "RAM (%)", "Disque (%)", "Uptime (s)", "Match", "Source"])
     for ca, asset, ipam in rows:
-        ram_pct = round(asset.ram_used / asset.ram_max * 100, 1) if asset.ram_max else ""
-        disk_pct = round(asset.disk_used / asset.disk_max * 100, 1) if asset.disk_max else ""
         writer.writerow([
             asset.vm_name, asset.node, asset.status, asset.type,
             ca.ip_final or "", ca.dns_final or "",
@@ -290,7 +244,7 @@ def inventory_export():
             ipam.tenant if ipam else "",
             ipam.site if ipam else "",
             asset.cpu_usage if asset.cpu_usage is not None else "",
-            ram_pct, disk_pct,
+            ram_percent(asset) or "", disk_percent(asset) or "",
             asset.uptime if asset.uptime is not None else "",
             ca.match_status, ca.source_ip_dns,
         ])
@@ -302,7 +256,7 @@ def inventory_export():
     )
 
 
-# ---------- Detail VM ----------
+# ---------- Détail VM ----------
 @main_bp.route("/assets/<int:asset_id>")
 @login_required
 def asset_detail(asset_id):
