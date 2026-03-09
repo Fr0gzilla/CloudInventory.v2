@@ -11,3 +11,5 @@ instance/
 .pytest_cache/
 .claude/
 netbox-docker/
+mdpdf.log
+*.pdf

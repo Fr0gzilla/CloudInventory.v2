@@ -8,6 +8,7 @@ from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
 from collector.mock_virtualisation import fetch_mock_vms
 from collector.mock_netbox import fetch_mock_ipam
 from collector.netbox_client import fetch_ipam_records
+from collector.proxmox_client import fetch_proxmox_vms
 
 
 def _upsert_assets(vm_list):
@@ -95,11 +96,16 @@ def _detect_ipam_anomalies(run):
         if count > 1:
             dupes = IpamRecord.query.filter_by(ip=ip).all()
             names = ", ".join(d.dns_name or "?" for d in dupes)
-            db.session.add(Anomaly(
-                run_id=run.id, asset_id=Asset.query.first().id,
-                type="DUPLICATE_IP",
-                details=f"IP '{ip}' présente {count} fois dans NetBox (DNS: {names})",
-            ))
+            # Rattacher à un asset ayant cette IP si possible
+            asset = Asset.query.filter_by(ip_reported=ip).first()
+            if not asset:
+                asset = Asset.query.first()
+            if asset:
+                db.session.add(Anomaly(
+                    run_id=run.id, asset_id=asset.id,
+                    type="DUPLICATE_IP",
+                    details=f"IP '{ip}' présente {count} fois dans NetBox (DNS: {names})",
+                ))
 
 
 def _consolidate(run):
@@ -175,8 +181,12 @@ def run_inventory():
     db.session.flush()
 
     try:
-        # 1. Collecte virtualisation (mock)
-        vm_list = fetch_mock_vms()
+        # 1. Collecte virtualisation (mock ou Proxmox)
+        use_mock_virt = os.getenv("USE_MOCK_VIRT", "true").lower() == "true"
+        if use_mock_virt:
+            vm_list = fetch_mock_vms()
+        else:
+            vm_list = fetch_proxmox_vms()
         _upsert_assets(vm_list)
 
         # 2. Collecte IPAM/DNS (mock ou NetBox)

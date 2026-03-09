@@ -1,7 +1,9 @@
 """Requetes et helpers partages entre les routes web et l'API REST."""
 
+import csv
+import io
 from app import db
-from app.models import Asset, IpamRecord, ConsolidatedAsset
+from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
 
 
 def build_inventory_query(run_id, q="", status="", node="", vm_type="",
@@ -81,3 +83,81 @@ def serialize_inventory_item(ca, asset, ipam):
         "ram_pct": ram_percent(asset),
         "uptime": asset.uptime,
     }
+
+
+def get_stats_data():
+    """Calcule les statistiques du dashboard (partage web + API)."""
+    last_run = Run.query.order_by(Run.id.desc()).first()
+    if not last_run:
+        return {"has_data": False}
+
+    match_data = {"matched": last_run.matched_name_count, "no_match": last_run.no_match_count}
+
+    anomaly_stats = (
+        db.session.query(Anomaly.type, db.func.count(Anomaly.id))
+        .filter(Anomaly.run_id == last_run.id)
+        .group_by(Anomaly.type)
+        .all()
+    )
+    anomaly_data = {t: c for t, c in anomaly_stats}
+
+    recent_runs = Run.query.filter(Run.status == "SUCCESS").order_by(Run.id.desc()).limit(10).all()
+    recent_runs.reverse()
+    evolution = {
+        "labels": [f"#{r.id}" for r in recent_runs],
+        "matched": [r.matched_name_count for r in recent_runs],
+        "no_match": [r.no_match_count for r in recent_runs],
+        "vms": [r.vm_count for r in recent_runs],
+    }
+
+    return {
+        "has_data": True,
+        "match": match_data,
+        "anomalies": anomaly_data,
+        "evolution": evolution,
+    }
+
+
+def get_run_comparison_data(run_id):
+    """Recupere les donnees d'un run pour la comparaison (partage web + API)."""
+    rows = (
+        db.session.query(ConsolidatedAsset, Asset, IpamRecord)
+        .join(Asset, ConsolidatedAsset.asset_id == Asset.id)
+        .outerjoin(IpamRecord, ConsolidatedAsset.ipam_record_id == IpamRecord.id)
+        .filter(ConsolidatedAsset.run_id == run_id)
+        .all()
+    )
+    return {asset.vm_name: (ca, asset, ipam) for ca, asset, ipam in rows}
+
+
+def export_inventory_csv(run_id):
+    """Genere le contenu CSV de l'inventaire d'un run (partage web + API)."""
+    rows = (
+        db.session.query(ConsolidatedAsset, Asset, IpamRecord)
+        .join(Asset, ConsolidatedAsset.asset_id == Asset.id)
+        .outerjoin(IpamRecord, ConsolidatedAsset.ipam_record_id == IpamRecord.id)
+        .filter(ConsolidatedAsset.run_id == run_id)
+        .all()
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output, delimiter=";")
+    writer.writerow([
+        "VM", "Node", "Status", "Type", "IP", "DNS", "Statut IP",
+        "Tenant", "Site", "CPU (%)", "RAM (%)", "Disque (%)",
+        "Uptime (s)", "Match", "Source",
+    ])
+    for ca, asset, ipam in rows:
+        writer.writerow([
+            asset.vm_name, asset.node, asset.status, asset.type,
+            ca.ip_final or "", ca.dns_final or "",
+            ipam.status if ipam else "",
+            ipam.tenant if ipam else "",
+            ipam.site if ipam else "",
+            asset.cpu_usage if asset.cpu_usage is not None else "",
+            ram_percent(asset) or "", disk_percent(asset) or "",
+            asset.uptime if asset.uptime is not None else "",
+            ca.match_status, ca.source_ip_dns,
+        ])
+
+    return output.getvalue()

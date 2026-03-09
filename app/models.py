@@ -13,7 +13,6 @@ class Run(db.Model):
     vm_count = db.Column(db.Integer, default=0)
     ip_count = db.Column(db.Integer, default=0)
     matched_name_count = db.Column(db.Integer, default=0)
-    matched_ip_count = db.Column(db.Integer, default=0)
     no_match_count = db.Column(db.Integer, default=0)
 
     consolidated_assets = db.relationship("ConsolidatedAsset", backref="run", lazy=True)

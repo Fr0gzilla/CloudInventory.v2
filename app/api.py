@@ -1,13 +1,14 @@
 """[API] API REST — endpoints JSON protégés par JWT."""
 
 import os
-import csv
-import io
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import create_access_token, jwt_required
 from app import db
 from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
-from app.queries import build_inventory_query, serialize_inventory_item, ram_percent, disk_percent
+from app.queries import (
+    build_inventory_query, serialize_inventory_item, ram_percent, disk_percent,
+    get_stats_data, get_run_comparison_data, export_inventory_csv,
+)
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -81,43 +82,7 @@ def api_stats():
       200:
         description: Statistiques globales (match, anomalies, evolution)
     """
-    last_run = Run.query.order_by(Run.id.desc()).first()
-    if not last_run:
-        return jsonify({"has_data": False})
-
-    match_data = {
-        "matched": last_run.matched_name_count,
-        "no_match": last_run.no_match_count,
-    }
-
-    anomaly_stats = (
-        db.session.query(Anomaly.type, db.func.count(Anomaly.id))
-        .filter(Anomaly.run_id == last_run.id)
-        .group_by(Anomaly.type)
-        .all()
-    )
-    anomaly_data = {t: c for t, c in anomaly_stats}
-
-    recent_runs = (
-        Run.query.filter(Run.status == "SUCCESS")
-        .order_by(Run.id.desc())
-        .limit(10)
-        .all()
-    )
-    recent_runs.reverse()
-    evolution = {
-        "labels": [f"#{r.id}" for r in recent_runs],
-        "matched": [r.matched_name_count for r in recent_runs],
-        "no_match": [r.no_match_count for r in recent_runs],
-        "vms": [r.vm_count for r in recent_runs],
-    }
-
-    return jsonify({
-        "has_data": True,
-        "match": match_data,
-        "anomalies": anomaly_data,
-        "evolution": evolution,
-    })
+    return jsonify(get_stats_data())
 
 
 # ──────────────────────────────────────────────
@@ -297,18 +262,8 @@ def api_run_compare():
     Run.query.get_or_404(run1_id)
     Run.query.get_or_404(run2_id)
 
-    def get_run_data(rid):
-        rows = (
-            db.session.query(ConsolidatedAsset, Asset, IpamRecord)
-            .join(Asset, ConsolidatedAsset.asset_id == Asset.id)
-            .outerjoin(IpamRecord, ConsolidatedAsset.ipam_record_id == IpamRecord.id)
-            .filter(ConsolidatedAsset.run_id == rid)
-            .all()
-        )
-        return {asset.vm_name: (ca, asset, ipam) for ca, asset, ipam in rows}
-
-    data1 = get_run_data(run1_id)
-    data2 = get_run_data(run2_id)
+    data1 = get_run_comparison_data(run1_id)
+    data2 = get_run_comparison_data(run2_id)
 
     names1 = set(data1.keys())
     names2 = set(data2.keys())
@@ -448,36 +403,8 @@ def api_inventory_export():
     if not last_run:
         return jsonify({"error": "Aucun run disponible"}), 404
 
-    rows = (
-        db.session.query(ConsolidatedAsset, Asset, IpamRecord)
-        .join(Asset, ConsolidatedAsset.asset_id == Asset.id)
-        .outerjoin(IpamRecord, ConsolidatedAsset.ipam_record_id == IpamRecord.id)
-        .filter(ConsolidatedAsset.run_id == last_run.id)
-        .all()
-    )
-
-    output = io.StringIO()
-    writer = csv.writer(output, delimiter=";")
-    writer.writerow([
-        "VM", "Node", "Status", "Type", "IP", "DNS", "Statut IP",
-        "Tenant", "Site", "CPU (%)", "RAM (%)", "Disque (%)",
-        "Uptime (s)", "Match", "Source",
-    ])
-    for ca, asset, ipam in rows:
-        writer.writerow([
-            asset.vm_name, asset.node, asset.status, asset.type,
-            ca.ip_final or "", ca.dns_final or "",
-            ipam.status if ipam else "",
-            ipam.tenant if ipam else "",
-            ipam.site if ipam else "",
-            asset.cpu_usage if asset.cpu_usage is not None else "",
-            ram_percent(asset) or "", disk_percent(asset) or "",
-            asset.uptime if asset.uptime is not None else "",
-            ca.match_status, ca.source_ip_dns,
-        ])
-
     return Response(
-        output.getvalue(),
+        export_inventory_csv(last_run.id),
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename=inventaire_run{last_run.id}.csv"},
     )
