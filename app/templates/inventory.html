@@ -18,14 +18,32 @@
     <form method="GET" id="filterForm" class="row g-2 align-items-end">
       <div class="col-12 col-sm-6 col-lg-2">
         <label class="form-label small text-muted mb-1">Recherche</label>
-        <input type="text" name="q" id="liveSearch" class="form-control form-control-sm" placeholder="VM, IP, DNS..." value="{{ q or '' }}" autocomplete="off">
+        <input type="text" name="q" id="liveSearch" class="form-control form-control-sm" placeholder="Hostname, IP, FQDN..." value="{{ q or '' }}" autocomplete="off">
       </div>
-      <div class="col-6 col-lg-2">
-        <label for="f-status" class="form-label small text-muted mb-1">Status</label>
+      <div class="col-6 col-lg-1">
+        <label for="f-status" class="form-label small text-muted mb-1">Etat</label>
         <select id="f-status" name="status" class="form-select form-select-sm">
           <option value="">Tous</option>
           {% for s in filters.statuses %}
           <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-lg-1">
+        <label for="f-node" class="form-label small text-muted mb-1">Hote</label>
+        <select id="f-node" name="node" class="form-select form-select-sm">
+          <option value="">Tous</option>
+          {% for n in filters.nodes %}
+          <option value="{{ n }}" {% if node == n %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-lg-1">
+        <label for="f-type" class="form-label small text-muted mb-1">Type</label>
+        <select id="f-type" name="type" class="form-select form-select-sm">
+          <option value="">Tous</option>
+          {% for t in filters.types %}
+          <option value="{{ t }}" {% if vm_type == t %}selected{% endif %}>{{ t }}</option>
           {% endfor %}
         </select>
       </div>
@@ -58,7 +76,7 @@
           <i class="bi bi-funnel me-1 d-none d-lg-inline"></i>Filtrer
         </button>
       </div>
-      {% if q or status or match or tag %}
+      {% if q or status or node or vm_type or match or tag %}
       <div class="col-auto">
         <a href="{{ url_for('main.inventory') }}" class="btn btn-outline-secondary btn-sm" title="Effacer filtres">
           <i class="bi bi-x-lg"></i>
@@ -77,8 +95,8 @@
         <tr>
           {% macro sort_header(col, label, extra_class="") %}
           <th class="{{ extra_class }}">
-            <a href="?sort={{ col }}&order={{ 'desc' if sort == col and order == 'asc' else 'asc' }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}"
-               class="text-white text-decoration-none d-inline-flex align-items-center gap-1" style="cursor:pointer">
+            <a href="?sort={{ col }}&order={{ 'desc' if sort == col and order == 'asc' else 'asc' }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if node %}&node={{ node }}{% endif %}{% if vm_type %}&type={{ vm_type }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}"
+               class="text-white text-decoration-none d-inline-flex align-items-center gap-1 ci-sort-link">
               {{ label }}
               {% if sort == col %}
               <i class="bi bi-caret-{{ 'up' if order == 'asc' else 'down' }}-fill small"></i>
@@ -88,45 +106,43 @@
             </a>
           </th>
           {% endmacro %}
-          {{ sort_header("vm_name", "VM") }}
-          {{ sort_header("status", "Status") }}
+          {{ sort_header("vm_name", "Hostname") }}
+          <th class="d-none d-md-table-cell">Hote</th>
+          {{ sort_header("status", "Etat") }}
+          <th class="d-none d-lg-table-cell">Type</th>
           {{ sort_header("ip", "IP") }}
-          <th class="d-none d-lg-table-cell">DNS</th>
-          <th class="d-none d-lg-table-cell">Zone</th>
-          {{ sort_header("cpu", "CPU", "d-none d-md-table-cell") }}
-          {{ sort_header("ram", "RAM", "d-none d-md-table-cell") }}
+          <th class="d-none d-lg-table-cell">FQDN</th>
+          <th class="d-none d-xl-table-cell">OS</th>
+          <th class="d-none d-xl-table-cell">Role</th>
+          <th class="d-none d-xl-table-cell">Meta Zone</th>
+          <th class="d-none d-xxl-table-cell">Note</th>
           {{ sort_header("match", "Match") }}
         </tr>
       </thead>
       <tbody id="inventoryBody">
         {% for ca, asset, ipam in items %}
-        <tr class="{% if ca.match_status == 'NO_MATCH' %}table-danger{% elif ca.match_status == 'MATCHED_NAME' %}table-success{% endif %}">
+        <tr class="{% if ca.match_status == 'NO_MATCH' %}table-danger{% elif ca.match_status == 'MATCHED_IP' %}table-info{% elif ca.match_status == 'MATCHED_FQDN' %}table-warning{% elif ca.match_status == 'MATCHED_NAME' %}table-success{% endif %}">
           <td><a href="{{ url_for('main.asset_detail', asset_id=asset.id) }}" class="fw-semibold text-decoration-none">{{ asset.vm_name }}</a></td>
+          <td class="d-none d-md-table-cell"><small>{{ asset.node }}</small></td>
           <td>
             {% if asset.status == 'running' %}<span class="badge bg-success">running</span>
             {% else %}<span class="badge bg-secondary">{{ asset.status }}</span>{% endif %}
           </td>
+          <td class="d-none d-lg-table-cell"><span class="badge bg-info text-dark">{{ asset.type }}</span></td>
           <td><code class="small">{{ ca.ip_final or '—' }}</code></td>
-          <td class="d-none d-lg-table-cell">{{ ca.dns_final or '—' }}</td>
-          <td class="d-none d-lg-table-cell">
-            {% if ipam and ipam.tenant %}
-              <span class="badge bg-dark bg-opacity-10 text-body">{{ ipam.tenant }}</span>
-              {% if ipam.site %}<small class="text-muted">/ {{ ipam.site }}</small>{% endif %}
+          <td class="d-none d-lg-table-cell"><small>{{ asset.fqdn or '—' }}</small></td>
+          <td class="d-none d-xl-table-cell"><small>{{ asset.os or '—' }}</small></td>
+          <td class="d-none d-xl-table-cell"><small>{{ ca.role or 'Indéterminé' }}</small></td>
+          <td class="d-none d-xl-table-cell">
+            {% if ipam and ipam.meta_zone %}
+            <span class="badge bg-dark bg-opacity-10 text-body">{{ ipam.meta_zone }}</span>
             {% else %}—{% endif %}
           </td>
-          <td class="d-none d-md-table-cell">
-            {% if asset.cpu_usage is not none %}
-            <span class="{% if asset.cpu_usage > 80 %}text-danger fw-bold{% elif asset.cpu_usage > 50 %}text-warning fw-bold{% endif %}">{{ asset.cpu_usage }}%</span>
-            {% else %}—{% endif %}
-          </td>
-          <td class="d-none d-md-table-cell">
-            {% if asset.ram_max and asset.ram_max > 0 %}
-            {% set ram_pct = (asset.ram_used / asset.ram_max * 100)|round(0)|int %}
-            <span class="{% if ram_pct > 85 %}text-danger fw-bold{% elif ram_pct > 60 %}text-warning fw-bold{% endif %}">{{ ram_pct }}%</span>
-            {% else %}—{% endif %}
-          </td>
+          <td class="d-none d-xxl-table-cell"><small>{{ asset.annotation or '—' }}</small></td>
           <td>
-            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED (nom)</span>
+            {% elif ca.match_status == 'MATCHED_FQDN' %}<span class="badge ci-badge-purple">MATCHED (FQDN)</span>
+            {% elif ca.match_status == 'MATCHED_IP' %}<span class="badge bg-info text-dark">MATCHED (IP)</span>
             {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
             {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
           </td>
@@ -143,19 +159,19 @@
   <small class="text-muted">{{ pagination.total }} resultat(s) — page {{ pagination.page }}/{{ pagination.pages }}</small>
   <ul class="pagination pagination-sm mb-0">
     <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-      <a class="page-link" href="?page={{ pagination.prev_num }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if order %}&order={{ order }}{% endif %}">&laquo;</a>
+      <a class="page-link" href="?page={{ pagination.prev_num }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if node %}&node={{ node }}{% endif %}{% if vm_type %}&type={{ vm_type }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if order %}&order={{ order }}{% endif %}">&laquo;</a>
     </li>
     {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
       {% if p %}
       <li class="page-item {% if p == pagination.page %}active{% endif %}">
-        <a class="page-link" href="?page={{ p }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if order %}&order={{ order }}{% endif %}">{{ p }}</a>
+        <a class="page-link" href="?page={{ p }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if node %}&node={{ node }}{% endif %}{% if vm_type %}&type={{ vm_type }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if order %}&order={{ order }}{% endif %}">{{ p }}</a>
       </li>
       {% else %}
       <li class="page-item disabled"><span class="page-link">...</span></li>
       {% endif %}
     {% endfor %}
     <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-      <a class="page-link" href="?page={{ pagination.next_num }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if order %}&order={{ order }}{% endif %}">&raquo;</a>
+      <a class="page-link" href="?page={{ pagination.next_num }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if node %}&node={{ node }}{% endif %}{% if vm_type %}&type={{ vm_type }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if sort %}&sort={{ sort }}{% endif %}{% if order %}&order={{ order }}{% endif %}">&raquo;</a>
     </li>
   </ul>
 </nav>
@@ -189,11 +205,15 @@
       var params = new URLSearchParams();
       if (q) params.set('q', q);
       var status = form.querySelector('[name=status]').value;
+      var node = form.querySelector('[name=node]').value;
+      var vmType = form.querySelector('[name=type]').value;
       var match = form.querySelector('[name=match]').value;
       var tag = form.querySelector('[name=tag]').value;
       var sort = form.querySelector('[name=sort]').value;
       var order = form.querySelector('[name=order]').value;
       if (status) params.set('status', status);
+      if (node) params.set('node', node);
+      if (vmType) params.set('type', vmType);
       if (match) params.set('match', match);
       if (tag) params.set('tag', tag);
       if (sort) params.set('sort', sort);
@@ -205,24 +225,25 @@
           if (!data.items) return;
           var html = '';
           data.items.forEach(function(item) {
-            var rc = item.match_status === 'NO_MATCH' ? 'table-danger' : (item.match_status === 'MATCHED_NAME' ? 'table-success' : '');
+            var rc = item.match_status === 'NO_MATCH' ? 'table-danger' : (item.match_status === 'MATCHED_NAME' ? 'table-success' : (item.match_status === 'MATCHED_FQDN' ? 'table-warning' : (item.match_status === 'MATCHED_IP' ? 'table-info' : '')));
             var sb = item.status === 'running' ? '<span class="badge bg-success">running</span>' : '<span class="badge bg-secondary">' + item.status + '</span>';
-            var cpu = '\u2014';
-            if (item.cpu_usage !== null && item.cpu_usage !== undefined) {
-              var cc = item.cpu_usage > 80 ? 'text-danger fw-bold' : (item.cpu_usage > 50 ? 'text-warning fw-bold' : '');
-              cpu = '<span class="' + cc + '">' + item.cpu_usage + '%</span>';
-            }
-            var ram = '\u2014';
-            if (item.ram_pct !== null && item.ram_pct !== undefined) {
-              var rmc = item.ram_pct > 85 ? 'text-danger fw-bold' : (item.ram_pct > 60 ? 'text-warning fw-bold' : '');
-              ram = '<span class="' + rmc + '">' + item.ram_pct + '%</span>';
-            }
-            var zone = '\u2014';
-            if (item.tenant) { zone = '<span class="badge bg-dark bg-opacity-10 text-body">' + item.tenant + '</span>'; if (item.site) zone += '<small class="text-muted">/ ' + item.site + '</small>'; }
-            var mb = item.match_status === 'MATCHED_NAME' ? '<span class="badge badge-matched">MATCHED</span>' : (item.match_status === 'NO_MATCH' ? '<span class="badge badge-nomatch">NO MATCH</span>' : '<span class="badge bg-secondary">' + item.match_status + '</span>');
-            html += '<tr class="' + rc + '"><td><a href="/assets/' + item.id + '" class="fw-semibold text-decoration-none">' + item.vm_name + '</a></td><td>' + sb + '</td><td><code class="small">' + (item.ip || '\u2014') + '</code></td><td class="d-none d-lg-table-cell">' + (item.dns || '\u2014') + '</td><td class="d-none d-lg-table-cell">' + zone + '</td><td class="d-none d-md-table-cell">' + cpu + '</td><td class="d-none d-md-table-cell">' + ram + '</td><td>' + mb + '</td></tr>';
+            var mz = item.meta_zone ? '<span class="badge bg-dark bg-opacity-10 text-body">' + item.meta_zone + '</span>' : '\u2014';
+            var mb = item.match_status === 'MATCHED_NAME' ? '<span class="badge badge-matched">MATCHED (nom)</span>' : (item.match_status === 'MATCHED_FQDN' ? '<span class="badge ci-badge-purple">MATCHED (FQDN)</span>' : (item.match_status === 'MATCHED_IP' ? '<span class="badge bg-info text-dark">MATCHED (IP)</span>' : (item.match_status === 'NO_MATCH' ? '<span class="badge badge-nomatch">NO MATCH</span>' : '<span class="badge bg-secondary">' + item.match_status + '</span>')));
+            html += '<tr class="' + rc + '">'
+              + '<td><a href="/assets/' + item.id + '" class="fw-semibold text-decoration-none">' + item.vm_name + '</a></td>'
+              + '<td class="d-none d-md-table-cell"><small>' + (item.node || '\u2014') + '</small></td>'
+              + '<td>' + sb + '</td>'
+              + '<td class="d-none d-lg-table-cell"><span class="badge bg-info text-dark">' + (item.type || '\u2014') + '</span></td>'
+              + '<td><code class="small">' + (item.ip || '\u2014') + '</code></td>'
+              + '<td class="d-none d-lg-table-cell"><small>' + (item.fqdn || '\u2014') + '</small></td>'
+              + '<td class="d-none d-xl-table-cell"><small>' + (item.os || '\u2014') + '</small></td>'
+              + '<td class="d-none d-xl-table-cell"><small>' + (item.role || 'Ind\u00e9termin\u00e9') + '</small></td>'
+              + '<td class="d-none d-xl-table-cell">' + mz + '</td>'
+              + '<td class="d-none d-xxl-table-cell"><small>' + (item.annotation || '\u2014') + '</small></td>'
+              + '<td>' + mb + '</td>'
+              + '</tr>';
           });
-          tbody.innerHTML = html || '<tr><td colspan="8" class="text-muted text-center py-3">Aucun resultat</td></tr>';
+          tbody.innerHTML = html || '<tr><td colspan="11" class="text-muted text-center py-3">Aucun resultat</td></tr>';
           var countEl = document.querySelector('.pagination-sm') ? document.querySelector('.pagination-sm').parentNode : null;
           if (countEl) countEl.innerHTML = '<small class="text-muted">' + data.total + ' resultat(s)</small>';
         });

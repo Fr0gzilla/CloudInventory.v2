@@ -103,7 +103,9 @@
           <td><span class="badge bg-{{ 'success' if asset.status == 'running' else 'secondary' }}">{{ asset.status }}</span></td>
           <td><code class="small">{{ ca.ip_final or '—' }}</code></td>
           <td>
-            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED (nom)</span>
+            {% elif ca.match_status == 'MATCHED_FQDN' %}<span class="badge ci-badge-purple">MATCHED (FQDN)</span>
+            {% elif ca.match_status == 'MATCHED_IP' %}<span class="badge bg-info text-dark">MATCHED (IP)</span>
             {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
             {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
           </td>
@@ -135,7 +137,9 @@
           <td><span class="badge bg-{{ 'success' if asset.status == 'running' else 'secondary' }}">{{ asset.status }}</span></td>
           <td><code class="small">{{ ca.ip_final or '—' }}</code></td>
           <td>
-            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED (nom)</span>
+            {% elif ca.match_status == 'MATCHED_FQDN' %}<span class="badge ci-badge-purple">MATCHED (FQDN)</span>
+            {% elif ca.match_status == 'MATCHED_IP' %}<span class="badge bg-info text-dark">MATCHED (IP)</span>
             {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
             {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
           </td>

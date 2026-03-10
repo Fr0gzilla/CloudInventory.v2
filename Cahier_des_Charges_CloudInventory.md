@@ -1,4 +1,4 @@
-# Cahier des Charges — CloudInventory v1.0
+# Cahier des Charges — CloudInventory v2.0
 
 ## Table des matieres
 
@@ -8,17 +8,19 @@
 4. [Perimetre fonctionnel](#4-perimetre-fonctionnel)
 5. [Architecture technique](#5-architecture-technique)
 6. [Modele de donnees](#6-modele-de-donnees)
-7. [Description des fonctionnalites](#7-description-des-fonctionnalites)
-8. [API REST](#8-api-rest)
-9. [Securite et authentification](#9-securite-et-authentification)
-10. [Interface utilisateur](#10-interface-utilisateur)
-11. [Infrastructure et deploiement](#11-infrastructure-et-deploiement)
-12. [Jeux de donnees de test](#12-jeux-de-donnees-de-test)
-13. [Tests et validation](#13-tests-et-validation)
-14. [Contraintes techniques](#14-contraintes-techniques)
-15. [Evolutions prevues](#15-evolutions-prevues)
-16. [Livrables](#16-livrables)
-17. [Glossaire](#17-glossaire)
+7. [Algorithme de consolidation](#7-algorithme-de-consolidation)
+8. [Description des fonctionnalites](#8-description-des-fonctionnalites)
+9. [API REST](#9-api-rest)
+10. [Securite et authentification](#10-securite-et-authentification)
+11. [Interface utilisateur](#11-interface-utilisateur)
+12. [Infrastructure et deploiement](#12-infrastructure-et-deploiement)
+13. [Jeux de donnees de test](#13-jeux-de-donnees-de-test)
+14. [Tests et validation](#14-tests-et-validation)
+15. [Contraintes techniques](#15-contraintes-techniques)
+16. [Evolutions prevues](#16-evolutions-prevues)
+17. [Livrables](#17-livrables)
+18. [Glossaire](#18-glossaire)
+19. [Diagrammes](#19-diagrammes)
 
 ---
 
@@ -38,7 +40,7 @@ Marceau — Etudiant BTS SIO SLAM.
 
 ### 1.4 Version
 
-v1.0 — Phase 1 (donnees simulees).
+v2.0 — Consolidation multi-strategie, deduction de role, sources reelles et simulees.
 
 ---
 
@@ -57,10 +59,11 @@ Sans outil centralise, les administrateurs systeme font face a plusieurs difficu
 - **Machines orphelines** : des VM existent dans l'hyperviseur sans aucune correspondance dans l'IPAM (aucune documentation reseau).
 - **Doublons** : des enregistrements DNS ou IP dupliques passent inapercus.
 - **Absence d'historique** : aucun suivi de l'evolution du parc dans le temps.
+- **Renommages non detectes** : une VM renommee perd sa correspondance IPAM sans alerte.
 
 ### 2.3 Solution proposee
 
-CloudInventory automatise la collecte, la consolidation et l'analyse des donnees provenant de ces deux sources. Il genere un inventaire consolide, detecte automatiquement les anomalies et offre un suivi historique via une interface web intuitive et une API REST documentee.
+CloudInventory automatise la collecte, la consolidation et l'analyse des donnees provenant de ces deux sources. Il genere un inventaire consolide via un algorithme de matching multi-strategie (hostname, FQDN, IP), detecte automatiquement 6 types d'anomalies, deduit le role fonctionnel de chaque asset et offre un suivi historique via une interface web intuitive et une API REST documentee.
 
 ---
 
@@ -70,51 +73,53 @@ CloudInventory automatise la collecte, la consolidation et l'analyse des donnees
 
 | # | Objectif | Priorite |
 |---|----------|----------|
-| OF1 | Collecter automatiquement les donnees de virtualisation (VM/CT) | Haute |
-| OF2 | Collecter automatiquement les donnees IPAM/DNS (NetBox) | Haute |
-| OF3 | Consolider les deux sources en un inventaire unique | Haute |
-| OF4 | Detecter automatiquement les anomalies d'infrastructure | Haute |
-| OF5 | Fournir un tableau de bord avec indicateurs cles et graphiques | Haute |
-| OF6 | Permettre la consultation et le filtrage de l'inventaire | Haute |
-| OF7 | Exporter l'inventaire au format CSV | Moyenne |
-| OF8 | Comparer deux executions (runs) pour suivre l'evolution | Moyenne |
-| OF9 | Consulter l'historique detaille de chaque asset | Moyenne |
-| OF10 | Exposer une API REST documentee (Swagger/OpenAPI) | Moyenne |
+| OF1 | Collecter les donnees de virtualisation (VM/CT) depuis Proxmox VE ou mock | Haute |
+| OF2 | Collecter les donnees IPAM/DNS depuis NetBox ou mock | Haute |
+| OF3 | Consolider les deux sources via matching multi-strategie (hostname, FQDN, IP) | Haute |
+| OF4 | Detecter automatiquement 6 types d'anomalies d'infrastructure | Haute |
+| OF5 | Deduire le role fonctionnel de chaque asset (convention de nommage + tags) | Haute |
+| OF6 | Fournir un tableau de bord avec indicateurs cles et graphiques | Haute |
+| OF7 | Permettre la consultation, le filtrage et le tri de l'inventaire | Haute |
+| OF8 | Exporter l'inventaire au format CSV | Moyenne |
+| OF9 | Comparer deux executions (runs) pour suivre l'evolution | Moyenne |
+| OF10 | Consulter l'historique detaille de chaque asset sur 30 runs | Moyenne |
+| OF11 | Exposer une API REST documentee (Swagger/OpenAPI) | Moyenne |
 
 ### 3.2 Objectifs techniques
 
 | # | Objectif | Priorite |
 |---|----------|----------|
 | OT1 | Authentification securisee (sessions web + JWT API) | Haute |
-| OT2 | Base de donnees relationnelle avec ORM | Haute |
+| OT2 | Base de donnees relationnelle avec ORM (5 tables) | Haute |
 | OT3 | Architecture modulaire (Blueprints Flask) | Haute |
-| OT4 | Conteneurisation Docker | Moyenne |
-| OT5 | Couverture de tests automatises (40+ tests) | Moyenne |
-| OT6 | Interface responsive (mobile/tablette/desktop) | Moyenne |
+| OT4 | Sources interchangeables (mock / API reelle) via variables d'environnement | Haute |
+| OT5 | Conteneurisation Docker | Moyenne |
+| OT6 | Couverture de tests automatises (58 tests) | Moyenne |
+| OT7 | Interface responsive (mobile/tablette/desktop) | Moyenne |
 
 ---
 
 ## 4. Perimetre fonctionnel
 
-### 4.1 Dans le perimetre (Phase 1)
+### 4.1 Dans le perimetre (v2.0)
 
-- Collecte de donnees a partir de **sources simulees** (mock Proxmox + mock NetBox).
-- Consolidation automatique avec algorithme de correspondance par nom DNS.
-- Detection de 4 types d'anomalies.
+- Collecte de donnees a partir de **sources simulees** (mock Proxmox + mock NetBox) **ou reelles** (API Proxmox VE + API NetBox).
+- Consolidation automatique avec **algorithme de matching multi-strategie** (4 niveaux de priorite).
+- **Deduction automatique du role fonctionnel** (convention de nommage lettre+chiffres + tags).
+- Detection de **6 types d'anomalies**.
 - Interface web complete avec tableau de bord, inventaire, historique, anomalies.
 - API REST avec authentification JWT et documentation Swagger.
 - Export CSV de l'inventaire.
 - Comparaison entre deux executions.
 - Deploiement Docker.
 
-### 4.2 Hors perimetre (Phase 2 — evolutions)
+### 4.2 Hors perimetre (evolutions futures)
 
-- Connexion reelle a l'API Proxmox VE.
-- Connexion reelle a l'API NetBox (client deja developpe).
 - Planification automatique des collectes (cron/scheduler).
 - Gestion multi-utilisateurs avec roles et permissions.
 - Notifications par email ou webhook en cas d'anomalie critique.
 - Tableaux de bord personnalisables.
+- HTTPS en production.
 
 ---
 
@@ -124,7 +129,7 @@ CloudInventory automatise la collecte, la consolidation et l'analyse des donnees
 
 | Composant | Technologie | Version |
 |-----------|-------------|---------|
-| Langage backend | Python | 3.x |
+| Langage backend | Python | 3.12+ |
 | Framework web | Flask | 3.1.0 |
 | ORM | Flask-SQLAlchemy | 3.1.1 |
 | Auth sessions | Flask-Login | 0.6.3 |
@@ -144,32 +149,43 @@ CloudInventory automatise la collecte, la consolidation et l'analyse des donnees
 ### 5.2 Architecture applicative
 
 ```
-CloudInventory/
+CloudInventory.v2-1/
 |
 |-- app/                          # Application Flask
-|   |-- __init__.py               # Factory + init extensions
-|   |-- auth.py                   # Blueprint authentification
+|   |-- __init__.py               # Factory + init extensions (JWT, Swagger, Login)
+|   |-- auth.py                   # Blueprint authentification (Flask-Login)
 |   |-- models.py                 # Modeles SQLAlchemy (5 tables)
-|   |-- routes.py                 # Blueprint routes web
-|   |-- api.py                    # Blueprint API REST
-|   |-- queries.py                # Requetes et helpers partages
+|   |-- routes.py                 # Blueprint routes web (dashboard, inventaire, runs...)
+|   |-- api.py                    # Blueprint API REST (JWT)
+|   |-- queries.py                # Requetes et helpers partages (build_inventory_query, etc.)
 |   |-- templates/                # Templates Jinja2 (9 pages)
+|       |-- base.html             # Layout de base avec navigation
+|       |-- login.html            # Formulaire d'authentification
+|       |-- dashboard.html        # Tableau de bord avec graphiques
+|       |-- inventory.html        # Liste filtrable et paginee
+|       |-- runs.html             # Historique des executions
+|       |-- run_detail.html       # Detail d'un run (inventaire + anomalies)
+|       |-- run_compare.html      # Comparaison entre deux runs
+|       |-- asset_detail.html     # Fiche VM avec historique
+|       |-- anomalies.html        # Liste filtrable des anomalies
 |
 |-- collector/                    # Module de collecte
-|   |-- inventory_runner.py       # Orchestrateur principal
-|   |-- mock_virtualisation.py    # Donnees simulees Proxmox
-|   |-- mock_netbox.py            # Donnees simulees NetBox
+|   |-- __init__.py
+|   |-- inventory_runner.py       # Orchestrateur (consolidation multi-strategie + anomalies)
+|   |-- mock_virtualisation.py    # Donnees simulees Proxmox (45 VMs/CTs)
+|   |-- mock_netbox.py            # Donnees simulees NetBox (44 records)
+|   |-- proxmox_client.py         # Client API Proxmox VE (reel)
 |   |-- netbox_client.py          # Client API NetBox (reel)
 |
-|-- tests/                        # Tests automatises
-|   |-- test_app.py               # Tests web (modeles, routes)
-|   |-- test_api.py               # Tests API REST (JWT)
+|-- tests/                        # Tests automatises (58 tests)
+|   |-- test_app.py               # Tests web : modeles, routes, consolidation (34 tests)
+|   |-- test_api.py               # Tests API REST : JWT, endpoints, filtres (24 tests)
 |
 |-- run.py                        # Point d'entree
-|-- requirements.txt              # Dependances Python
-|-- Dockerfile                    # Image Docker
+|-- requirements.txt              # Dependances Python (8 packages)
+|-- Dockerfile                    # Image Docker (Python 3.12-slim)
 |-- docker-compose.yml            # Orchestration conteneurs
-|-- .env                          # Configuration locale
+|-- .env.example                  # Variables d'environnement (template)
 ```
 
 ### 5.3 Schema d'architecture
@@ -178,18 +194,20 @@ CloudInventory/
 +-------------------+          +-------------------+
 |   Source A         |          |   Source B         |
 |   Proxmox VE      |          |   NetBox (IPAM)    |
-|   (mock Phase 1)  |          |   (mock Phase 1)   |
+|   (mock ou reel)  |          |   (mock ou reel)   |
 +--------+----------+          +----------+---------+
          |                                |
          v                                v
 +------------------------------------------------+
-|            Moteur de consolidation              |
-|         (collector/inventory_runner.py)         |
-|                                                 |
-|  1. Collecte VM/CT    2. Collecte IPAM          |
-|  3. Upsert en base    4. Correspondance DNS     |
-|  5. Detection anomalies  6. Finalisation run    |
-+------------------------+-----------------------+
+|        Moteur de consolidation multi-strategie  |
+|         (collector/inventory_runner.py)          |
+|                                                  |
+|  1. Collecte VM/CT      2. Collecte IPAM         |
+|  3. Upsert en base      4. Matching 4 niveaux    |
+|     (hostname → FQDN → IP → NO_MATCH)           |
+|  5. Deduction de role    6. Detection anomalies   |
+|  7. Compteurs + finalisation run                  |
++------------------------+-------------------------+
                          |
                          v
               +----------+---------+
@@ -208,7 +226,8 @@ CloudInventory/
    |  - Inventaire    |      |  GET  /api/stats |
    |  - Runs          |      |  GET  /api/runs  |
    |  - Anomalies     |      |  GET  /api/inv.  |
-   |  - Export CSV     |      |  GET  /api/anom. |
+   |  - Export CSV    |      |  GET  /api/anom. |
+   |  - Asset Detail  |      |  GET  /api/assets|
    +------------------+      +-----------------+
 ```
 
@@ -223,13 +242,14 @@ CloudInventory/
 | Champ | Type | Contrainte | Description |
 |-------|------|------------|-------------|
 | id | INTEGER | PK, auto-increment | Identifiant unique du run |
-| started_at | DATETIME | NOT NULL, default=now | Date/heure de debut |
+| started_at | DATETIME | NOT NULL, default=now(UTC) | Date/heure de debut |
 | ended_at | DATETIME | nullable | Date/heure de fin |
-| status | VARCHAR(20) | NOT NULL | Statut : RUNNING, SUCCESS, FAIL |
+| status | VARCHAR(20) | NOT NULL, default=RUNNING | Statut : RUNNING, SUCCESS, FAIL |
 | error_message | TEXT | nullable | Message d'erreur en cas d'echec |
 | vm_count | INTEGER | default=0 | Nombre de VM collectees |
 | ip_count | INTEGER | default=0 | Nombre d'enregistrements IPAM collectes |
-| matched_name_count | INTEGER | default=0 | Correspondances par nom DNS |
+| matched_name_count | INTEGER | default=0 | Correspondances par hostname |
+| matched_fqdn_count | INTEGER | default=0 | Correspondances par FQDN |
 | matched_ip_count | INTEGER | default=0 | Correspondances par IP |
 | no_match_count | INTEGER | default=0 | VM sans correspondance |
 
@@ -238,13 +258,16 @@ CloudInventory/
 | Champ | Type | Contrainte | Description |
 |-------|------|------------|-------------|
 | id | INTEGER | PK, auto-increment | Identifiant interne |
-| vm_id | VARCHAR(50) | UNIQUE, NOT NULL | Identifiant source (Proxmox VMID) |
-| vm_name | VARCHAR(255) | NOT NULL | Nom de la VM/CT |
+| vm_id | VARCHAR(50) | NOT NULL | Identifiant source (Proxmox VMID) |
+| vm_name | VARCHAR(100) | NOT NULL | Nom de la VM/CT |
 | type | VARCHAR(20) | | Type : qemu (VM) ou lxc (conteneur) |
 | node | VARCHAR(100) | | Noeud hyperviseur hebergeant l'asset |
-| status | VARCHAR(50) | | Statut : running, stopped |
-| tags | TEXT | nullable | Tags au format CSV (ex: "env:prod,role:web") |
-| ip_reported | VARCHAR(45) | nullable | Adresse IP rapportee par l'hyperviseur |
+| status | VARCHAR(20) | | Statut : running, stopped |
+| tags | VARCHAR(200) | nullable | Tags au format CSV (ex: "env:prod, role:web, os:debian-12") |
+| ip_reported | VARCHAR(45) | nullable | Adresse IP rapportee par le QEMU Guest Agent |
+| fqdn | VARCHAR(255) | nullable | Nom de domaine complet de la VM |
+| os | VARCHAR(100) | nullable | Systeme d'exploitation de la VM |
+| annotation | TEXT | nullable | Note ou description libre |
 | cpu_count | INTEGER | nullable | Nombre de vCPU alloues |
 | cpu_usage | FLOAT | nullable | Utilisation CPU en pourcentage |
 | ram_max | BIGINT | nullable | RAM allouee en octets |
@@ -258,42 +281,45 @@ CloudInventory/
 | Champ | Type | Contrainte | Description |
 |-------|------|------------|-------------|
 | id | INTEGER | PK, auto-increment | Identifiant interne |
-| ip | VARCHAR(45) | UNIQUE, NOT NULL | Adresse IP |
-| dns_name | VARCHAR(255) | nullable | Nom DNS associe |
+| ip | VARCHAR(45) | NOT NULL | Adresse IP |
+| dns_name | VARCHAR(200) | nullable | Nom DNS associe |
 | status | VARCHAR(50) | nullable | Statut : active, reserved, deprecated |
 | tenant | VARCHAR(100) | nullable | Organisation/tenant proprietaire |
 | site | VARCHAR(100) | nullable | Site physique (datacenter) |
+| meta_zone | VARCHAR(100) | nullable | Zone reseau (ZM, ZCS, ZE) |
 
 #### Table `consolidated_asset` — Inventaire consolide
 
 | Champ | Type | Contrainte | Description |
 |-------|------|------------|-------------|
 | id | INTEGER | PK, auto-increment | Identifiant interne |
-| run_id | INTEGER | FK → run.id, NOT NULL | Run de reference |
-| asset_id | INTEGER | FK → asset.id, NOT NULL | Asset associe |
-| ipam_record_id | INTEGER | FK → ipam_record.id, nullable | Enregistrement IPAM associe (si match) |
+| run_id | INTEGER | FK -> run.id, NOT NULL | Run de reference |
+| asset_id | INTEGER | FK -> asset.id, NOT NULL | Asset associe |
+| ipam_record_id | INTEGER | FK -> ipam_record.id, nullable | Enregistrement IPAM associe (si match) |
 | ip_final | VARCHAR(45) | nullable | IP consolidee finale |
-| dns_final | VARCHAR(255) | nullable | DNS consolide final |
+| dns_final | VARCHAR(200) | nullable | DNS consolide final |
 | source_ip_dns | VARCHAR(20) | | Source des donnees IP/DNS : NETBOX ou VIRT |
-| match_status | VARCHAR(30) | | Resultat : MATCHED_NAME, MATCHED_IP, NO_MATCH |
-| role | VARCHAR(100) | default="Indetermine" | Role fonctionnel de l'asset |
+| match_status | VARCHAR(30) | | Resultat : MATCHED_NAME, MATCHED_FQDN, MATCHED_IP, NO_MATCH |
+| role | VARCHAR(50) | default="Indetermine" | Role fonctionnel deduit |
 
 #### Table `anomaly` — Anomalies detectees
 
 | Champ | Type | Contrainte | Description |
 |-------|------|------------|-------------|
 | id | INTEGER | PK, auto-increment | Identifiant interne |
-| run_id | INTEGER | FK → run.id, NOT NULL | Run ayant detecte l'anomalie |
-| asset_id | INTEGER | FK → asset.id, NOT NULL | Asset concerne |
+| run_id | INTEGER | FK -> run.id, NOT NULL | Run ayant detecte l'anomalie |
+| asset_id | INTEGER | FK -> asset.id, NOT NULL | Asset concerne |
 | type | VARCHAR(50) | NOT NULL | Type d'anomalie (voir 6.2) |
 | details | TEXT | nullable | Description detaillee |
-| created_at | DATETIME | default=now | Date de detection |
+| created_at | DATETIME | default=now(UTC) | Date de detection |
 
 ### 6.2 Types d'anomalies detectees
 
 | Code | Description | Condition de declenchement |
 |------|-------------|---------------------------|
-| NO_MATCH | VM sans correspondance IPAM | Aucun enregistrement DNS ne correspond au nom de la VM |
+| NO_MATCH | VM sans correspondance IPAM | Aucune correspondance trouvee (ni hostname, ni FQDN, ni IP) |
+| MATCHED_IP | Correspondance par IP uniquement | L'IP match mais le hostname ne correspond pas au DNS NetBox |
+| HOSTNAME_MISMATCH | Divergence hostname/DNS | VM matchee par IP mais hostname different du DNS NetBox |
 | STATUS_MISMATCH | Incoherence de statut | VM arretee (stopped) mais IP active dans NetBox |
 | DUPLICATE_DNS | Doublon DNS | Meme nom DNS present dans plusieurs enregistrements IPAM |
 | DUPLICATE_IP | Doublon IP | Meme adresse IP presente dans plusieurs enregistrements IPAM |
@@ -303,7 +329,7 @@ CloudInventory/
 ```
 Run (1) ----< (N) ConsolidatedAsset (N) >---- (1) Asset
                         |
-                        | (N..0)
+                        | (0..1)
                         v
                    IpamRecord (1)
 
@@ -317,9 +343,88 @@ Run (1) ----< (N) Anomaly (N) >---- (1) Asset
 
 ---
 
-## 7. Description des fonctionnalites
+## 7. Algorithme de consolidation
 
-### 7.1 Tableau de bord (Dashboard)
+### 7.1 Matching multi-strategie
+
+L'algorithme de consolidation applique 4 strategies de correspondance par ordre de priorite decroissante :
+
+```
+Pour chaque Asset :
+  |
+  |-- Strategie 1 : MATCHED_NAME (hostname normalise)
+  |   Condition : normalize(asset.vm_name) == normalize(ipam.dns_name)
+  |   Source : NETBOX (source de verite reseau)
+  |   → Si match ET asset.stopped ET ipam.active → Anomalie STATUS_MISMATCH
+  |
+  |-- Strategie 2 : MATCHED_FQDN (premier segment du FQDN)
+  |   Condition : normalize(asset.fqdn).split('.')[0] == normalize(ipam.dns_name)
+  |   Source : NETBOX
+  |
+  |-- Strategie 3 : MATCHED_IP (fallback par adresse IP)
+  |   Condition : asset.ip_reported == ipam.ip
+  |   Source : NETBOX
+  |   → Anomalie HOSTNAME_MISMATCH (hostname ≠ DNS NetBox)
+  |
+  |-- Strategie 4 : NO_MATCH (aucune correspondance)
+  |   Source : VIRT (donnees hyperviseur uniquement)
+  |   → Anomalie NO_MATCH
+```
+
+### 7.2 Normalisation des hostnames
+
+- Conversion en minuscules.
+- Suppression des espaces.
+- Suppression du suffixe de domaine (ex: `web-a500.prod.local` → `web-a500`).
+
+### 7.3 Deduction du role fonctionnel
+
+Deux strategies combinees :
+
+**Strategie 1 — Convention de nommage (lettre + 3 chiffres)** :
+
+| Lettre | Role |
+|--------|------|
+| a | Application |
+| b | Base de donnees |
+| c | Communication |
+| d | DNS |
+| f | Fichiers |
+| h | Hyperviseur |
+| i | Impression |
+| j | Journalisation |
+| k | SSI |
+| l | Authentification |
+| m | Messagerie |
+| n | News |
+| o | Proxy |
+| p | Pare-feu |
+| r | Ressources |
+| s | Supervision |
+| t | Temps |
+| v | Correctifs |
+| w | Web |
+| x | Annuaire |
+| z | Multifonctions |
+
+Exemple : `web-a500` → lettre `a` → "Application".
+
+**Strategie 2 — Tags `role:xxx`** :
+
+Si aucune lettre+chiffres n'est trouvee, le tag `role:xxx` de la VM est utilise. Correspondances : `web` → Web, `api` → Application, `database` → Base de donnees, `cache` → Communication, `proxy` → Proxy, `loadbalancer` → Proxy, `logs` → Journalisation, `dns` → DNS, `auth` → Authentification, `mail` → Messagerie, `firewall` → Pare-feu, `monitoring` → Supervision, `secrets` → SSI, `ci` → Ressources, etc.
+
+### 7.4 Detection des anomalies IPAM
+
+Apres la consolidation, un second passage detecte les doublons dans les enregistrements IPAM :
+
+- **DUPLICATE_DNS** : comptage par `dns_name` normalise → anomalie si count > 1.
+- **DUPLICATE_IP** : comptage par `ip` → anomalie si count > 1.
+
+---
+
+## 8. Description des fonctionnalites
+
+### 8.1 Tableau de bord (Dashboard)
 
 **Route** : `GET /`
 
@@ -329,7 +434,7 @@ Run (1) ----< (N) Anomaly (N) >---- (1) Asset
 - 4 cartes statistiques : nombre total de VM, correspondances, non-correspondances, anomalies.
 - 3 graphiques interactifs (Chart.js) :
   - **Doughnut** : repartition correspondances / non-correspondances.
-  - **Barres** : anomalies par type (NO_MATCH, STATUS_MISMATCH, etc.).
+  - **Barres** : anomalies par type (NO_MATCH, STATUS_MISMATCH, HOSTNAME_MISMATCH, etc.).
   - **Ligne** : evolution sur les 10 derniers runs (VM, matched, no_match).
 - Bouton "Lancer l'inventaire" (appel AJAX asynchrone).
 - Informations du dernier run (date, statut, compteurs).
@@ -338,31 +443,31 @@ Run (1) ----< (N) Anomaly (N) >---- (1) Asset
 
 ---
 
-### 7.2 Execution d'un inventaire (Run)
+### 8.2 Execution d'un inventaire (Run)
 
 **Routes** :
 - `POST /run` — declenchement classique avec redirection.
 - `POST /ajax/run` — declenchement AJAX avec reponse JSON.
 
-**Pipeline d'execution (6 etapes)** :
+**Pipeline d'execution (7 etapes)** :
 
 1. **Initialisation** : creation d'un enregistrement `Run` avec status=RUNNING.
-2. **Collecte virtualisation** : appel a `fetch_mock_vms()` → liste de VM/CT avec metriques.
-3. **Collecte IPAM** : appel a `fetch_mock_ipam()` → liste d'enregistrements IP/DNS.
-4. **Upsert en base** : insertion ou mise a jour des `Asset` (par vm_id) et `IpamRecord` (par ip).
-5. **Consolidation** :
-   - Construction d'un index DNS (insensible a la casse).
-   - Pour chaque asset : recherche de correspondance par nom DNS.
-   - Si match : `match_status=MATCHED_NAME`, `source=NETBOX`, verification de coherence de statut.
-   - Si pas de match : `match_status=NO_MATCH`, `source=VIRT`, creation d'anomalie NO_MATCH.
-6. **Detection d'anomalies IPAM** : recherche de doublons DNS et IP dans les enregistrements IPAM.
-7. **Finalisation** : mise a jour du run avec status=SUCCESS, compteurs et horodatage.
+2. **Collecte virtualisation** : appel a `fetch_mock_vms()` ou `fetch_proxmox_vms()` selon `USE_MOCK_VIRT`.
+3. **Collecte IPAM** : appel a `fetch_mock_ipam()` ou `fetch_ipam_records()` selon `USE_MOCK_IPAM`.
+4. **Upsert en base** : insertion ou mise a jour des `Asset` (par vm_id) et `IpamRecord` (par ip + dns_name).
+5. **Consolidation multi-strategie** :
+   - Construction des index DNS (hostname normalise) et IP.
+   - Pour chaque asset : matching 4 niveaux (hostname → FQDN → IP → NO_MATCH).
+   - Deduction du role fonctionnel.
+   - Detection des anomalies de matching (NO_MATCH, STATUS_MISMATCH, HOSTNAME_MISMATCH).
+6. **Detection anomalies IPAM** : recherche de doublons DNS et IP dans les enregistrements IPAM.
+7. **Finalisation** : mise a jour du run avec status=SUCCESS, compteurs (matched_name, matched_fqdn, matched_ip, no_match) et horodatage.
 
 **Gestion d'erreur** : en cas d'exception, rollback de la transaction, status=FAIL avec message d'erreur.
 
 ---
 
-### 7.3 Inventaire consolide
+### 8.3 Inventaire consolide
 
 **Route** : `GET /inventory`
 
@@ -375,18 +480,18 @@ Run (1) ----< (N) Anomaly (N) >---- (1) Asset
   - Statut VM (running/stopped)
   - Noeud hyperviseur (pve1 a pve5)
   - Type (qemu/lxc)
-  - Statut de correspondance (MATCHED_NAME/NO_MATCH)
+  - Statut de correspondance (MATCHED_NAME/MATCHED_FQDN/MATCHED_IP/NO_MATCH)
   - Tags (filtre par categorie:valeur)
 - **Tri** : par nom VM, statut, IP, CPU, RAM, correspondance (ASC/DESC).
 - **Recherche live AJAX** : `GET /ajax/inventory/search` met a jour le tableau en temps reel.
 - **Export CSV** : `GET /inventory/export` telecharge un fichier CSV (separateur `;`).
 
 **Colonnes du tableau** :
-VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, Source.
+VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, Source, Role.
 
 ---
 
-### 7.4 Historique des runs
+### 8.4 Historique des runs
 
 **Route** : `GET /runs`
 
@@ -394,25 +499,25 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 
 **Informations par run** :
 - ID, date de debut, duree, statut (badge couleur).
-- Compteurs : VM collectees, correspondances, non-correspondances.
+- Compteurs : VM collectees, correspondances (name, FQDN, IP), non-correspondances.
 - Lien vers le detail du run.
 
 ---
 
-### 7.5 Detail d'un run
+### 8.5 Detail d'un run
 
 **Route** : `GET /runs/<run_id>`
 
 **Description** : Vue detaillee d'une execution specifique.
 
 **Contenu** :
-- Statistiques du run (compteurs, duree, statut).
+- Statistiques du run (compteurs par type de match, duree, statut).
 - Tableau de l'inventaire consolide pour ce run.
 - Tableau des anomalies detectees lors de ce run.
 
 ---
 
-### 7.6 Comparaison de runs
+### 8.6 Comparaison de runs
 
 **Route** : `GET /runs/compare?run1=X&run2=Y`
 
@@ -425,21 +530,21 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 
 ---
 
-### 7.7 Detail d'un asset
+### 8.7 Detail d'un asset
 
 **Route** : `GET /assets/<asset_id>`
 
 **Description** : Fiche detaillee d'une machine virtuelle ou d'un conteneur.
 
 **Contenu** :
-- Informations de l'asset : nom, type, noeud, statut, tags, IP.
-- Metriques : CPU, RAM (utilise/total + pourcentage), disque (utilise/total + pourcentage), uptime.
-- Historique sur les 30 derniers runs : evolution de l'IP, du DNS, du statut de correspondance.
+- Informations de l'asset : nom, type, noeud, statut, tags, IP, FQDN, OS, annotation.
+- Metriques : CPU (count + usage %), RAM (utilise/total + %), disque (utilise/total + %), uptime.
+- Historique sur les 30 derniers runs : evolution de l'IP, du DNS, du statut de correspondance, tenant, site.
 - Liste des anomalies associees a cet asset.
 
 ---
 
-### 7.8 Anomalies
+### 8.8 Anomalies
 
 **Route** : `GET /anomalies`
 
@@ -452,16 +557,16 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 
 ---
 
-## 8. API REST
+## 9. API REST
 
-### 8.1 Generalites
+### 9.1 Generalites
 
 - **Prefixe** : `/api/`
 - **Format** : JSON (entree et sortie).
 - **Documentation** : Swagger UI accessible sur `/apidocs`.
 - **Authentification** : JWT (Bearer token).
 
-### 8.2 Authentification
+### 9.2 Authentification
 
 | Methode | Endpoint | Description |
 |---------|----------|-------------|
@@ -484,21 +589,34 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 
 **Utilisation** : header `Authorization: Bearer <token>` sur toutes les routes protegees.
 
-### 8.3 Endpoints
+### 9.3 Endpoints
 
 | Methode | Endpoint | Description | Parametres |
 |---------|----------|-------------|------------|
 | GET | `/api/stats` | Statistiques du dashboard | - |
 | GET | `/api/runs` | Liste des runs (pagine) | page, per_page |
 | POST | `/api/runs` | Lancer un nouveau run | - |
-| GET | `/api/runs/<id>` | Detail d'un run | - |
+| GET | `/api/runs/<id>` | Detail d'un run (inventaire + anomalies) | - |
 | GET | `/api/runs/compare` | Comparer deux runs | run1, run2 (requis) |
-| GET | `/api/inventory` | Inventaire consolide (pagine) | q, status, node, type, match, tag, sort, order, page, per_page |
+| GET | `/api/inventory` | Inventaire consolide (pagine + filtres) | q, status, node, type, match, tag, sort, order, page, per_page |
 | GET | `/api/inventory/export` | Export CSV | - |
-| GET | `/api/assets/<id>` | Detail d'un asset | - |
+| GET | `/api/assets/<id>` | Detail d'un asset (metriques + historique + anomalies) | - |
 | GET | `/api/anomalies` | Liste des anomalies (pagine) | type, run, page, per_page |
 
-### 8.4 Codes de retour
+### 9.4 Filtres de l'inventaire API
+
+| Parametre | Type | Valeurs | Description |
+|-----------|------|---------|-------------|
+| q | string | libre | Recherche VM, IP, DNS |
+| status | string | running, stopped | Filtre statut VM |
+| node | string | pve1..pve5 | Filtre noeud hyperviseur |
+| type | string | qemu, lxc | Filtre type VM/CT |
+| match | string | MATCHED_NAME, MATCHED_FQDN, MATCHED_IP, NO_MATCH | Filtre correspondance |
+| tag | string | libre | Filtre par tag |
+| sort | string | vm_name, status, ip, cpu, ram, match | Tri |
+| order | string | asc, desc | Ordre de tri |
+
+### 9.5 Codes de retour
 
 | Code | Signification |
 |------|---------------|
@@ -510,9 +628,9 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 
 ---
 
-## 9. Securite et authentification
+## 10. Securite et authentification
 
-### 9.1 Authentification web (Flask-Login)
+### 10.1 Authentification web (Flask-Login)
 
 - **Methode** : authentification par formulaire (username + mot de passe).
 - **Stockage** : cookie de session signe avec `SECRET_KEY`.
@@ -520,7 +638,7 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 - **Protection** : toutes les routes web sont protegees par le decorateur `@login_required`.
 - **Redirection** : un utilisateur non connecte est automatiquement redirige vers `/login`.
 
-### 9.2 Authentification API (JWT)
+### 10.2 Authentification API (JWT)
 
 - **Methode** : JSON Web Token via `Flask-JWT-Extended`.
 - **Obtention** : `POST /api/login` avec identifiants JSON.
@@ -528,7 +646,7 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 - **Protection** : toutes les routes API sont protegees par le decorateur `@jwt_required()`.
 - **Cle de signature** : `JWT_SECRET_KEY` (variable d'environnement).
 
-### 9.3 Variables sensibles
+### 10.3 Variables sensibles
 
 Toutes les donnees sensibles sont stockees dans le fichier `.env` (non versionne) :
 
@@ -539,15 +657,21 @@ Toutes les donnees sensibles sont stockees dans le fichier `.env` (non versionne
 | ADMIN_USERNAME | Nom d'utilisateur administrateur | admin |
 | ADMIN_PASSWORD | Mot de passe administrateur | admin |
 | DATABASE_URL | URI de connexion a la base de donnees | sqlite:///cloudinventory.db |
+| USE_MOCK_VIRT | Utiliser les donnees simulees (virtualisation) | true |
+| USE_MOCK_IPAM | Utiliser les donnees simulees (IPAM) | true |
+| PROXMOX_URL | URL de l'instance Proxmox VE | - |
+| PROXMOX_TOKEN_ID | Token ID Proxmox (user@pam!token) | - |
+| PROXMOX_TOKEN_SECRET | Secret du token Proxmox | - |
+| PROXMOX_VERIFY_SSL | Verification SSL Proxmox | false |
 | NETBOX_URL | URL de l'instance NetBox | - |
 | NETBOX_TOKEN | Token d'API NetBox | - |
-| USE_MOCK_IPAM | Utiliser les donnees simulees | true |
+| NETBOX_VERIFY_SSL | Verification SSL NetBox | true |
 
 ---
 
-## 10. Interface utilisateur
+## 11. Interface utilisateur
 
-### 10.1 Charte graphique
+### 11.1 Charte graphique
 
 - **Framework CSS** : Bootstrap 5.3.3 (responsive, mobile-first).
 - **Police** : Inter (Google Fonts).
@@ -555,7 +679,7 @@ Toutes les donnees sensibles sont stockees dans le fichier `.env` (non versionne
 - **Barre de navigation** : degrade lineaire `#0f172a → #1e293b`.
 - **Theme** : clair/sombre avec bascule (persistance via localStorage).
 
-### 10.2 Pages de l'application
+### 11.2 Pages de l'application
 
 | Page | Route | Description |
 |------|-------|-------------|
@@ -565,29 +689,29 @@ Toutes les donnees sensibles sont stockees dans le fichier `.env` (non versionne
 | Historique des runs | `/runs` | Liste des executions |
 | Detail d'un run | `/runs/<id>` | Inventaire + anomalies du run |
 | Comparaison de runs | `/runs/compare` | Diff entre deux runs |
-| Detail d'un asset | `/assets/<id>` | Fiche VM avec historique |
+| Detail d'un asset | `/assets/<id>` | Fiche VM avec historique et metriques |
 | Anomalies | `/anomalies` | Liste filtrable des anomalies |
 | Documentation API | `/apidocs` | Swagger UI interactive |
 
-### 10.3 Responsivite
+### 11.3 Responsivite
 
 L'interface est concue pour s'adapter a 3 formats :
 - **Mobile** (< 768px) : colonnes masquees, navigation simplifiee.
-- **Tablette** (768px — 1024px) : affichage intermediaire.
+- **Tablette** (768px - 1024px) : affichage intermediaire.
 - **Desktop** (> 1024px) : affichage complet avec toutes les colonnes.
 
-### 10.4 Elements visuels
+### 11.4 Elements visuels
 
-- **Badges de statut** : SUCCESS (vert), FAIL (rouge), RUNNING (jaune).
-- **Badges de correspondance** : MATCHED_NAME (bleu), NO_MATCH (rouge).
+- **Badges de statut run** : SUCCESS (vert), FAIL (rouge), RUNNING (jaune).
+- **Badges de correspondance** : MATCHED_NAME (bleu), MATCHED_FQDN (cyan), MATCHED_IP (orange), NO_MATCH (rouge).
 - **Graphiques interactifs** : Chart.js (doughnut, barres, lignes).
 - **Effets** : ombres sur les cartes, survol interactif.
 
 ---
 
-## 11. Infrastructure et deploiement
+## 12. Infrastructure et deploiement
 
-### 11.1 Deploiement local (developpement)
+### 12.1 Deploiement local (developpement)
 
 ```bash
 # 1. Cloner le depot
@@ -609,7 +733,7 @@ python run.py
 # → http://127.0.0.1:5050
 ```
 
-### 11.2 Deploiement Docker
+### 12.2 Deploiement Docker
 
 ```bash
 # Construction et lancement
@@ -632,82 +756,103 @@ docker-compose up --build
 
 ---
 
-## 12. Jeux de donnees de test
+## 13. Jeux de donnees de test
 
-### 12.1 Donnees de virtualisation (mock)
+### 13.1 Donnees de virtualisation (mock)
 
-40 VM/CT reparties sur 5 noeuds hyperviseurs :
+45 VM/CT reparties sur 5 noeuds hyperviseurs + 5 cas speciaux :
 
 | Noeud | Nombre | Role | Exemples |
 |-------|--------|------|----------|
-| pve1 | 8 | Production Web/App | web-a500, app-backend, proxy-nginx, haproxy-lb |
-| pve2 | 8 | Production Data/Stockage | db-b500, db-replica, nfs-storage, log-elastic |
-| pve3 | 8 | Infrastructure/Reseau | dns-d500, ldap-auth, vpn-gateway, firewall-pf |
-| pve4 | 8 | Supervision/DevOps | monitoring, grafana-dash, prometheus-ts, vault-secrets |
-| pve5 | 8 | Dev/Test/Staging | dev-frontend, ci-runner, staging-web, sandbox-test |
+| pve1 | 8 | Production Web/App | web-a500, app-backend, proxy-nginx, haproxy-lb, rabbitmq-prod |
+| pve2 | 8 | Production Data/Stockage | db-b500, db-replica, nfs-storage, minio-s3, log-elastic |
+| pve3 | 8 | Infrastructure/Reseau | dns-d500, ldap-auth, vpn-gateway, firewall-pf, mail-smtp |
+| pve4 | 8 | Supervision/DevOps | monitoring, grafana-dash, prometheus-ts, vault-secrets, ansible-ctrl |
+| pve5 | 8 | Dev/Test/Staging | dev-frontend, ci-runner, staging-web, staging-api, staging-db |
 
-**+ 5 VM "orphelines"** (sans correspondance IPAM volontaire) :
-`unknown-x999`, `temp-migration`, `old-legacy`, `ghost-vm`, `decom-windows`.
+**+ 5 VM speciales** (scenarios d'anomalies) :
 
-### 12.2 Donnees IPAM (mock NetBox)
+| VM | Scenario | Anomalie attendue |
+|----|----------|-------------------|
+| `srv-renamed-x999` | FQDN `decom-server.legacy.local` connu dans NetBox | MATCHED_FQDN |
+| `temp-migration` | Aucune correspondance | NO_MATCH |
+| `old-legacy` | Aucune correspondance, pas de FQDN | NO_MATCH |
+| `ghost-vm` | IP `10.0.9.98` connue dans NetBox (dns: old-printer) | MATCHED_IP + HOSTNAME_MISMATCH |
+| `decom-windows` | Aucune correspondance | NO_MATCH |
 
-- 40 enregistrements correspondant aux VM nommees.
-- 2 enregistrements orphelins (sans VM) : `decom-server`, `old-printer`.
+**Caracteristiques des donnees mock** :
+- Tags enrichis : env, role, os, criticite, owner, backup.
+- FQDN pour chaque VM (domaines: prod.local, data.local, infra.local, etc.).
+- OS declares (Debian 12, Ubuntu 22.04, Alpine 3.19, Rocky Linux 9, Windows Server 2022).
+- Annotations descriptives.
+- Metriques realistes (CPU, RAM, disque, uptime).
+
+### 13.2 Donnees IPAM (mock NetBox)
+
+- 40 enregistrements correspondant aux VM nommees (5 noeuds).
+- 2 enregistrements orphelins : `decom-server` (reserved), `old-printer` (deprecated).
+- 1 doublon DNS volontaire : `monitoring` (2 IPs : 10.0.4.10 et 10.0.8.50).
+- 1 doublon IP volontaire : `10.0.4.16` (2 DNS : gitea-repo et gitea-mirror).
 - Tenants : Production, Infra, Dev, Staging, Supervision, DevOps.
-- Site : DC1.
+- Zones reseau : ZM (zone metier), ZCS (zone controle/supervision), ZE (zone essai).
+- Site : DC1 (+ DC2 pour le doublon).
 
-### 12.3 Anomalies attendues
+### 13.3 Anomalies attendues par run
 
 Avec ces donnees, chaque run detecte :
-- **5 anomalies NO_MATCH** : les 5 VM orphelines.
-- **Anomalies STATUS_MISMATCH** : VM arretees avec IP active.
-- **Anomalies DUPLICATE_DNS/IP** : si presentes dans les donnees IPAM.
+- **3 anomalies NO_MATCH** : temp-migration, old-legacy, decom-windows.
+- **1 anomalie MATCHED_IP + HOSTNAME_MISMATCH** : ghost-vm (IP match old-printer).
+- **2 anomalies STATUS_MISMATCH** : backup-srv et backup-offsite (stopped mais IP active).
+- **1 anomalie DUPLICATE_DNS** : monitoring (2 enregistrements).
+- **1 anomalie DUPLICATE_IP** : 10.0.4.16 (gitea-repo + gitea-mirror).
 
 ---
 
-## 13. Tests et validation
+## 14. Tests et validation
 
-### 13.1 Framework de test
+### 14.1 Framework de test
 
 - **pytest 8.3.4** avec base SQLite en memoire.
 - **2 fichiers de tests** : `test_app.py` (web) et `test_api.py` (API).
-- **40+ tests automatises**.
+- **58 tests automatises** (34 + 24).
 
-### 13.2 Couverture des tests
+### 14.2 Couverture des tests
 
 | Module | Tests | Couverture |
 |--------|-------|------------|
 | Modeles (Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly) | 8 | Creation, relations, valeurs par defaut |
 | Authentification web | 6 | Login OK/KO, acces protege, redirection, logout |
-| Routes web (dashboard, runs, inventaire, assets, anomalies) | 10 | Affichage, pagination, filtres, export CSV |
-| Consolidation (inventory_runner) | 6 | Pipeline complet, correspondances, anomalies |
-| API REST (auth JWT) | 4 | Login, token, acces protege |
-| API REST (endpoints) | 20 | Stats, runs, inventaire, assets, anomalies, comparaison |
+| Routes web (dashboard, runs, inventaire, assets, anomalies) | 10+ | Affichage, pagination, filtres, export CSV |
+| Consolidation multi-strategie | 6+ | MATCHED_NAME, MATCHED_FQDN, MATCHED_IP, NO_MATCH, anomalies |
+| Deduction de role | 2+ | Convention hostname, tags |
+| Tri et filtres avances | 2+ | Sort asc/desc, filtre par type/node/match |
+| API REST (auth JWT) | 4 | Login, token, acces protege, erreurs |
+| API REST (endpoints) | 20 | Stats, runs, inventaire, assets, anomalies, comparaison, export CSV |
 
-### 13.3 Execution des tests
+### 14.3 Execution des tests
 
 ```bash
-pytest -v
+pytest tests/ -v
 ```
 
 ---
 
-## 14. Contraintes techniques
+## 15. Contraintes techniques
 
-### 14.1 Contraintes de performance
+### 15.1 Contraintes de performance
 
 - Pagination a 25 elements pour limiter la charge (configurable via `PER_PAGE`).
 - Recherche AJAX limitee a 100 resultats.
 - Historique d'asset limite aux 30 derniers runs.
 
-### 14.2 Contraintes de securite
+### 15.2 Contraintes de securite
 
 - Mot de passe administrateur configurable (non code en dur).
 - Cles secretes via variables d'environnement.
 - Fichier `.env` exclu du versioning (`.gitignore`).
 - Authentification obligatoire sur toutes les routes.
 
-### 14.3 Contraintes de compatibilite
+### 15.3 Contraintes de compatibilite
 
 - Python 3.10+ requis.
 - Navigateurs supportes : Chrome, Firefox, Edge, Safari (versions recentes).
@@ -715,37 +860,35 @@ pytest -v
 
 ---
 
-## 15. Evolutions prevues
-
-### Phase 2 — Connexion aux sources reelles
+## 16. Evolutions prevues
 
 | Evolution | Description | Complexite |
 |-----------|-------------|------------|
-| API Proxmox VE | Connexion reelle a l'hyperviseur pour collecter les VM/CT | Moyenne |
-| API NetBox | Utilisation du client NetBox deja developpe (`netbox_client.py`) | Faible |
 | Planification | Execution automatique des inventaires (cron ou APScheduler) | Faible |
 | Multi-utilisateurs | Gestion de comptes avec roles (admin, lecteur) | Moyenne |
 | Notifications | Alertes email/webhook en cas d'anomalie critique | Moyenne |
 | Metriques avancees | Graphiques d'evolution CPU/RAM/disque par asset | Moyenne |
 | HTTPS | Certificat SSL pour le deploiement en production | Faible |
 | Backup automatique | Sauvegarde planifiee de la base SQLite | Faible |
+| Tableaux personnalisables | Choix des colonnes et widgets du dashboard | Moyenne |
+| Multi-sites | Support de plusieurs datacenters et clusters | Haute |
 
 ---
 
-## 16. Livrables
+## 17. Livrables
 
 | Livrable | Format | Description |
 |----------|--------|-------------|
 | Code source | Git (GitHub) | Application complete avec historique de commits |
 | Documentation technique | Markdown | Cahier des charges, diagrammes UML, fiche E5 |
-| Diagrammes UML | Mermaid (Markdown) | MCD, MLD, diagrammes de sequence (8 diagrammes) |
-| Tests automatises | Python (pytest) | 40+ tests couvrant modeles, routes, API, consolidation |
+| Diagrammes UML | Mermaid (Markdown) | MCD, MLD, diagrammes de sequence |
+| Tests automatises | Python (pytest) | 58 tests couvrant modeles, routes, API, consolidation |
 | Conteneur Docker | Dockerfile + docker-compose | Deploiement conteneurise pret a l'emploi |
 | Documentation API | Swagger/OpenAPI | Documentation interactive accessible sur `/apidocs` |
 
 ---
 
-## 17. Glossaire
+## 18. Glossaire
 
 | Terme | Definition |
 |-------|-----------|
@@ -755,12 +898,583 @@ pytest -v
 | **NetBox** | Outil open source de gestion d'infrastructure reseau (IPAM, DCIM) |
 | **IPAM** | IP Address Management — gestion centralisee des adresses IP |
 | **DNS** | Domain Name System — systeme de resolution de noms de domaine |
+| **FQDN** | Fully Qualified Domain Name — nom de domaine complet (ex: web-a500.prod.local) |
 | **Run** | Execution complete du pipeline de collecte et consolidation |
 | **Asset** | Machine virtuelle ou conteneur gere dans l'infrastructure |
 | **Consolidation** | Processus de rapprochement entre les donnees de virtualisation et l'IPAM |
+| **Matching** | Correspondance entre un asset et un enregistrement IPAM |
 | **Anomalie** | Incoherence detectee entre les deux sources de donnees |
 | **JWT** | JSON Web Token — standard d'authentification pour les API REST |
 | **ORM** | Object-Relational Mapping — correspondance objet-relationnel (SQLAlchemy) |
 | **Blueprint** | Module Flask permettant de decouper l'application en composants |
 | **Swagger** | Specification OpenAPI pour documenter et tester les API REST |
 | **Mock** | Donnees simulees remplacant une source reelle pour le developpement/test |
+| **Upsert** | Operation combinant insertion et mise a jour (insert or update) |
+| **Zone reseau** | Segmentation logique du reseau (ZM=metier, ZCS=controle, ZE=essai) |
+
+---
+
+## 19. Diagrammes
+
+### 19.1 Modele Conceptuel de Donnees (MCD)
+
+```mermaid
+erDiagram
+    RUN ||--o{ CONSOLIDATED_ASSET : "produit"
+    RUN ||--o{ ANOMALY : "detecte"
+    ASSET ||--o{ CONSOLIDATED_ASSET : "consolide"
+    ASSET ||--o{ ANOMALY : "concerne"
+    IPAM_RECORD |o--o{ CONSOLIDATED_ASSET : "associe"
+
+    RUN {
+        int idRun PK
+        datetime started_at
+        datetime ended_at
+        string status
+        text error_message
+        int vm_count
+        int ip_count
+        int matched_name_count
+        int matched_fqdn_count
+        int matched_ip_count
+        int no_match_count
+    }
+
+    ASSET {
+        int idAsset PK
+        string vm_id UK
+        string vm_name
+        string type
+        string node
+        string status
+        string tags
+        string ip_reported
+        string fqdn
+        string os
+        text annotation
+        int cpu_count
+        float cpu_usage
+        bigint ram_max
+        bigint ram_used
+        bigint disk_max
+        bigint disk_used
+        int uptime
+    }
+
+    IPAM_RECORD {
+        int idIpamRecord PK
+        string ip UK
+        string dns_name
+        string status
+        string tenant
+        string site
+        string meta_zone
+    }
+
+    CONSOLIDATED_ASSET {
+        int idConsolidatedAsset PK
+        int run_id FK
+        int asset_id FK
+        int ipam_record_id FK
+        string ip_final
+        string dns_final
+        string source_ip_dns
+        string match_status
+        string role
+    }
+
+    ANOMALY {
+        int idAnomaly PK
+        int run_id FK
+        int asset_id FK
+        string type
+        text details
+        datetime created_at
+    }
+```
+
+---
+
+### 19.2 Modele Logique de Donnees (MLD / Schema relationnel)
+
+```mermaid
+erDiagram
+    RUN {
+        INT idRun PK
+        DATETIME started_at
+        DATETIME ended_at
+        VARCHAR status
+        TEXT error_message
+        INT vm_count
+        INT ip_count
+        INT matched_name_count
+        INT matched_fqdn_count
+        INT matched_ip_count
+        INT no_match_count
+    }
+
+    ASSET {
+        INT idAsset PK
+        VARCHAR vm_id
+        VARCHAR vm_name
+        VARCHAR type
+        VARCHAR node
+        VARCHAR status
+        VARCHAR tags
+        VARCHAR ip_reported
+        VARCHAR fqdn
+        VARCHAR os
+        TEXT annotation
+        INT cpu_count
+        FLOAT cpu_usage
+        BIGINT ram_max
+        BIGINT ram_used
+        BIGINT disk_max
+        BIGINT disk_used
+        INT uptime
+    }
+
+    IPAM_RECORD {
+        INT idIpamRecord PK
+        VARCHAR ip
+        VARCHAR dns_name
+        VARCHAR status
+        VARCHAR tenant
+        VARCHAR site
+        VARCHAR meta_zone
+    }
+
+    CONSOLIDATED_ASSET {
+        INT idConsolidatedAsset PK
+        INT run_id FK
+        INT asset_id FK
+        INT ipam_record_id FK
+        VARCHAR ip_final
+        VARCHAR dns_final
+        VARCHAR source_ip_dns
+        VARCHAR match_status
+        VARCHAR role
+    }
+
+    ANOMALY {
+        INT idAnomaly PK
+        INT run_id FK
+        INT asset_id FK
+        VARCHAR type
+        TEXT details
+        DATETIME created_at
+    }
+
+    RUN ||--o{ CONSOLIDATED_ASSET : "run_id"
+    RUN ||--o{ ANOMALY : "run_id"
+    ASSET ||--o{ CONSOLIDATED_ASSET : "asset_id"
+    ASSET ||--o{ ANOMALY : "asset_id"
+    IPAM_RECORD |o--o{ CONSOLIDATED_ASSET : "ipam_record_id"
+```
+
+---
+
+### 19.3 Diagramme de sequence — Authentification
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrateur
+    participant F as Frontend (Navigateur)
+    participant B as Backend (Flask)
+    participant S as Session (Flask-Login)
+    participant ENV as Variables .env
+
+    Admin->>F: Accede a l'application (/)
+    F->>B: GET /
+    B->>S: Verifie la session active
+    S-->>B: Aucune session
+    B-->>F: Redirect 302 vers /login
+
+    F-->>Admin: Affiche le formulaire de connexion
+
+    Admin->>F: Saisit identifiant et mot de passe
+    F->>B: POST /login (username, password)
+
+    B->>ENV: Lit ADMIN_USERNAME et ADMIN_PASSWORD
+    ENV-->>B: admin / admin
+
+    alt Identifiants valides
+        B->>S: Cree la session utilisateur (login_user)
+        S-->>B: Session creee avec cookie securise
+        B-->>F: Redirect 302 vers / (Dashboard)
+        F-->>Admin: Affiche le tableau de bord
+    else Identifiants invalides
+        B-->>F: Reaffiche /login avec message d'erreur
+        F-->>Admin: "Identifiants incorrects"
+    end
+
+    Note over Admin, ENV: Deconnexion
+
+    Admin->>F: Clique sur "Deconnexion"
+    F->>B: GET /logout
+    B->>S: Detruit la session (logout_user)
+    S-->>B: Session supprimee
+    B-->>F: Redirect 302 vers /login
+    F-->>Admin: Affiche le formulaire de connexion
+```
+
+---
+
+### 19.4 Diagramme de sequence — Lancement d'un cycle d'inventaire (Run)
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrateur
+    participant F as Frontend (Navigateur)
+    participant B as Backend (Flask)
+    participant R as InventoryRunner
+    participant SRC as Source Virt (Mock/Proxmox)
+    participant IPAM as Source IPAM (Mock/NetBox)
+    participant DB as Base de donnees (SQLite)
+
+    Admin->>F: Clique sur "Lancer l'inventaire"
+    F->>B: POST /ajax/run (AJAX)
+
+    rect rgb(40, 40, 80)
+        Note over B, DB: Etape 1 - Initialisation du Run
+        B->>R: run_inventory()
+        R->>DB: INSERT Run (status='RUNNING', started_at=now)
+        DB-->>R: Run cree (id=N)
+    end
+
+    rect rgb(40, 80, 40)
+        Note over R, SRC: Etape 2 - Collecte Virtualisation (USE_MOCK_VIRT)
+        R->>SRC: fetch_mock_vms() ou fetch_proxmox_vms()
+        SRC-->>R: Liste de 45 VM/CT (vm_id, vm_name, type, node, status, fqdn, os, annotation, tags, metriques)
+    end
+
+    rect rgb(40, 80, 40)
+        Note over R, IPAM: Etape 3 - Collecte IPAM/DNS (USE_MOCK_IPAM)
+        R->>IPAM: fetch_mock_ipam() ou fetch_ipam_records()
+        IPAM-->>R: Liste de 44 enregistrements IP/DNS (ip, dns_name, status, tenant, site, meta_zone)
+    end
+
+    rect rgb(80, 40, 40)
+        Note over R, DB: Etape 4 - Upsert des donnees
+        R->>DB: Pour chaque VM : INSERT ou UPDATE Asset (par vm_id)
+        R->>DB: Pour chaque IP : INSERT ou UPDATE IpamRecord (par ip + dns_name)
+        DB-->>R: Assets et IpamRecords a jour
+    end
+
+    rect rgb(80, 60, 20)
+        Note over R, DB: Etape 5 - Consolidation multi-strategie + deduction de role
+        R->>R: Construit index DNS (hostname normalise) et index IP
+        loop Pour chaque Asset
+            R->>R: Deduit le role fonctionnel (lettre+chiffres ou tag role:xxx)
+            alt Strategie 1 : hostname normalise == dns_name
+                R->>DB: INSERT ConsolidatedAsset (match_status='MATCHED_NAME', source='NETBOX')
+                alt VM stopped + IP active dans NetBox
+                    R->>DB: INSERT Anomaly (type='STATUS_MISMATCH')
+                end
+            else Strategie 2 : premier segment FQDN == dns_name
+                R->>DB: INSERT ConsolidatedAsset (match_status='MATCHED_FQDN', source='NETBOX')
+            else Strategie 3 : IP reportee == IP NetBox
+                R->>DB: INSERT ConsolidatedAsset (match_status='MATCHED_IP', source='NETBOX')
+                R->>DB: INSERT Anomaly (type='HOSTNAME_MISMATCH')
+            else Strategie 4 : aucune correspondance
+                R->>DB: INSERT ConsolidatedAsset (match_status='NO_MATCH', source='VIRT')
+                R->>DB: INSERT Anomaly (type='NO_MATCH')
+            end
+        end
+    end
+
+    rect rgb(80, 20, 20)
+        Note over R, DB: Etape 6 - Detection anomalies IPAM (doublons)
+        R->>R: Compte les dns_name en doublon
+        R->>DB: INSERT Anomaly (type='DUPLICATE_DNS') pour chaque doublon
+        R->>R: Compte les IP en doublon
+        R->>DB: INSERT Anomaly (type='DUPLICATE_IP') pour chaque doublon
+    end
+
+    rect rgb(40, 40, 80)
+        Note over R, DB: Etape 7 - Finalisation
+        R->>DB: UPDATE Run (status='SUCCESS', ended_at=now, compteurs)
+        DB-->>R: Run finalise
+    end
+
+    R-->>B: Retourne le Run avec statistiques
+    B-->>F: JSON {status: 'SUCCESS', run_id: N, vm_count: 45, matched_name: 40, matched_fqdn: 1, matched_ip: 1, no_match: 3}
+    F-->>Admin: Affiche les resultats et redirige vers le detail du run
+```
+
+---
+
+### 19.5 Diagramme de sequence — Consultation de l'inventaire avec filtres
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrateur
+    participant F as Frontend (Navigateur)
+    participant B as Backend (Flask)
+    participant DB as Base de donnees (SQLite)
+
+    Admin->>F: Accede a la page Inventaire
+    F->>B: GET /inventory
+
+    B->>DB: SELECT dernier Run (ORDER BY id DESC LIMIT 1)
+    DB-->>B: Run id=N
+
+    B->>DB: SELECT ConsolidatedAsset JOIN Asset JOIN IpamRecord WHERE run_id=N (LIMIT 25, page 1)
+    DB-->>B: 25 premiers assets consolides
+
+    B-->>F: Render inventory.html (tableau + filtres + pagination)
+    F-->>Admin: Affiche l'inventaire consolide
+
+    Note over Admin, DB: Application de filtres
+
+    Admin->>F: Selectionne status="running", node="pve1", match="MATCHED_NAME", recherche "web"
+    F->>B: GET /inventory?status=running&node=pve1&match=MATCHED_NAME&q=web
+
+    B->>DB: SELECT ... WHERE status='running' AND node='pve1' AND match_status='MATCHED_NAME' AND (vm_name LIKE '%web%' OR ip_final LIKE '%web%' OR dns_final LIKE '%web%')
+    DB-->>B: Resultats filtres
+
+    B-->>F: Render inventory.html (resultats filtres)
+    F-->>Admin: Affiche les resultats filtres
+
+    Note over Admin, DB: Export CSV
+
+    Admin->>F: Clique sur "Exporter CSV"
+    F->>B: GET /inventory/export
+    B->>DB: SELECT tous les ConsolidatedAssets du dernier run (sans pagination)
+    DB-->>B: Tous les assets
+    B->>B: Genere le fichier CSV (separateur point-virgule)
+    B-->>F: Reponse avec Content-Disposition: attachment; filename=inventaire_runN.csv
+    F-->>Admin: Telecharge le fichier CSV
+
+    Note over Admin, DB: Recherche AJAX temps reel
+
+    Admin->>F: Tape "db-" dans le champ de recherche
+    F->>B: GET /ajax/inventory/search?q=db-
+    B->>DB: SELECT ... WHERE vm_name LIKE '%db-%' (LIMIT 100)
+    DB-->>B: Resultats
+    B-->>F: JSON [{vm_name, status, ip, dns, match_status, role, ...}]
+    F-->>Admin: Met a jour le tableau en temps reel
+```
+
+---
+
+### 19.6 Diagramme de sequence — Comparaison de deux runs
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrateur
+    participant F as Frontend (Navigateur)
+    participant B as Backend (Flask)
+    participant DB as Base de donnees (SQLite)
+
+    Admin->>F: Accede a la page Runs
+    F->>B: GET /runs
+    B->>DB: SELECT tous les Runs (pagines 25/page)
+    DB-->>B: Liste des runs
+    B-->>F: Render runs.html
+    F-->>Admin: Affiche l'historique des runs
+
+    Admin->>F: Selectionne Run #5 et Run #8 pour comparaison
+    F->>B: GET /runs/compare?run1=5&run2=8
+
+    rect rgb(40, 40, 80)
+        Note over B, DB: Chargement des deux runs
+        B->>DB: SELECT ConsolidatedAsset JOIN Asset JOIN IpamRecord WHERE run_id=5
+        DB-->>B: Assets du Run #5 (dict par vm_name)
+        B->>DB: SELECT ConsolidatedAsset JOIN Asset JOIN IpamRecord WHERE run_id=8
+        DB-->>B: Assets du Run #8 (dict par vm_name)
+    end
+
+    rect rgb(80, 60, 20)
+        Note over B, B: Analyse des differences
+        B->>B: VMs AJOUTEES = (noms dans Run8) - (noms dans Run5)
+        B->>B: VMs SUPPRIMEES = (noms dans Run5) - (noms dans Run8)
+        B->>B: VMs MODIFIEES = noms communs avec delta (IP, DNS, match_status, status)
+    end
+
+    B-->>F: Render run_compare.html (tableaux colores : vert=ajoute, rouge=supprime, orange=modifie)
+    F-->>Admin: Affiche la comparaison cote a cote
+```
+
+---
+
+### 19.7 Diagramme de sequence — Detection et consultation des anomalies
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrateur
+    participant F as Frontend (Navigateur)
+    participant B as Backend (Flask)
+    participant R as InventoryRunner
+    participant DB as Base de donnees (SQLite)
+
+    Note over R, DB: Pendant l'execution d'un Run (automatique)
+
+    rect rgb(80, 20, 20)
+        Note over R, DB: Detection NO_MATCH (Strategie 4)
+        R->>R: VM "temp-migration" : aucune correspondance (ni hostname, ni FQDN, ni IP)
+        R->>DB: INSERT Anomaly (type='NO_MATCH')
+    end
+
+    rect rgb(80, 40, 20)
+        Note over R, DB: Detection HOSTNAME_MISMATCH (Strategie 3 - match par IP)
+        R->>R: VM "ghost-vm" matchee par IP 10.0.9.98 mais hostname != DNS NetBox "old-printer"
+        R->>DB: INSERT Anomaly (type='HOSTNAME_MISMATCH')
+    end
+
+    rect rgb(80, 50, 10)
+        Note over R, DB: Detection STATUS_MISMATCH (Strategie 1 - match par hostname)
+        R->>R: VM "backup-srv" est stopped mais IP 10.0.2.16 est "active" dans NetBox
+        R->>DB: INSERT Anomaly (type='STATUS_MISMATCH')
+    end
+
+    rect rgb(80, 20, 40)
+        Note over R, DB: Detection DUPLICATE_DNS (post-consolidation)
+        R->>R: dns_name "monitoring" apparait 2 fois dans NetBox (10.0.4.10 et 10.0.8.50)
+        R->>DB: INSERT Anomaly (type='DUPLICATE_DNS')
+    end
+
+    rect rgb(60, 20, 60)
+        Note over R, DB: Detection DUPLICATE_IP (post-consolidation)
+        R->>R: IP "10.0.4.16" apparait 2 fois dans NetBox (gitea-repo et gitea-mirror)
+        R->>DB: INSERT Anomaly (type='DUPLICATE_IP')
+    end
+
+    Note over Admin, DB: Consultation des anomalies
+
+    Admin->>F: Accede a la page Anomalies
+    F->>B: GET /anomalies
+    B->>DB: SELECT Anomaly JOIN Run JOIN Asset (pagine 25/page)
+    DB-->>B: Liste des anomalies
+    B-->>F: Render anomalies.html (tableau avec type, details, run, asset, date)
+    F-->>Admin: Affiche toutes les anomalies
+
+    Admin->>F: Filtre par type "HOSTNAME_MISMATCH"
+    F->>B: GET /anomalies?type=HOSTNAME_MISMATCH
+    B->>DB: SELECT ... WHERE type='HOSTNAME_MISMATCH'
+    DB-->>B: Anomalies filtrees
+    B-->>F: Render anomalies.html (resultats filtres)
+    F-->>Admin: Affiche uniquement les divergences hostname/DNS
+```
+
+---
+
+### 19.8 Diagramme de sequence — Dashboard et statistiques
+
+```mermaid
+sequenceDiagram
+    actor Admin as Administrateur
+    participant F as Frontend (Navigateur)
+    participant B as Backend (Flask)
+    participant DB as Base de donnees (SQLite)
+    participant CJS as Chart.js (Client)
+
+    Admin->>F: Accede au Dashboard (/)
+    F->>B: GET /
+
+    B->>DB: SELECT dernier Run (ORDER BY id DESC LIMIT 1)
+    DB-->>B: Run id=N (status, vm_count, ip_count, matched_name/fqdn/ip, no_match)
+
+    B->>DB: SELECT COUNT anomalies WHERE run_id=N GROUP BY type
+    DB-->>B: {NO_MATCH: 3, STATUS_MISMATCH: 2, HOSTNAME_MISMATCH: 1, DUPLICATE_DNS: 1, DUPLICATE_IP: 1}
+
+    B-->>F: Render dashboard.html (cartes statistiques + conteneurs graphiques)
+    F-->>Admin: Affiche le tableau de bord avec compteurs
+
+    Note over F, CJS: Chargement asynchrone des graphiques
+
+    F->>B: GET /ajax/stats (AJAX)
+
+    B->>DB: SELECT match_status, COUNT(*) GROUP BY match_status (dernier run)
+    DB-->>B: {MATCHED_NAME: 40, MATCHED_FQDN: 1, MATCHED_IP: 1, NO_MATCH: 3}
+
+    B->>DB: SELECT type, COUNT(*) FROM anomaly GROUP BY type (dernier run)
+    DB-->>B: Anomalies par type
+
+    B->>DB: SELECT vm_count, matched_name_count, matched_fqdn_count, matched_ip_count, no_match_count FROM run (10 derniers)
+    DB-->>B: Evolution sur 10 runs
+
+    B-->>F: JSON {matches: {...}, anomalies: {...}, evolution: [...]}
+
+    F->>CJS: Genere graphique Doughnut (MATCHED_NAME / MATCHED_FQDN / MATCHED_IP / NO_MATCH)
+    F->>CJS: Genere graphique Bar (anomalies par type : 6 types)
+    F->>CJS: Genere graphique Line (evolution des runs)
+    CJS-->>F: Graphiques rendus dans les canvas
+
+    F-->>Admin: Affiche les graphiques interactifs
+
+    Note over Admin, DB: Lancement rapide d'un inventaire
+
+    Admin->>F: Clique sur "Lancer l'inventaire"
+    F->>B: POST /ajax/run (AJAX)
+    B->>B: Execute run_inventory() (voir diagramme 19.4)
+    B-->>F: JSON {status: 'SUCCESS', run_id: N+1}
+    F->>F: Recharge la page pour afficher les nouvelles stats
+    F-->>Admin: Dashboard mis a jour avec le nouveau run
+```
+
+---
+
+### 19.9 Diagramme de sequence — API REST avec authentification JWT
+
+```mermaid
+sequenceDiagram
+    actor Client as Client API
+    participant API as API REST (Flask)
+    participant JWT as Flask-JWT-Extended
+    participant ENV as Variables .env
+    participant DB as Base de donnees (SQLite)
+
+    Note over Client, DB: Obtention du token JWT
+
+    Client->>API: POST /api/login {"username": "admin", "password": "admin"}
+    API->>ENV: Lit ADMIN_USERNAME et ADMIN_PASSWORD
+    ENV-->>API: admin / admin
+
+    alt Identifiants valides
+        API->>JWT: create_access_token(identity="admin")
+        JWT-->>API: Token JWT signe
+        API-->>Client: 200 {"access_token": "eyJhbGci..."}
+    else Identifiants invalides
+        API-->>Client: 401 {"error": "Identifiants incorrects"}
+    end
+
+    Note over Client, DB: Appel authentifie
+
+    Client->>API: GET /api/stats (Header: Authorization: Bearer eyJhbGci...)
+    API->>JWT: Verifie et decode le token (@jwt_required)
+    JWT-->>API: Token valide (identity="admin")
+    API->>DB: SELECT statistiques du dernier run
+    DB-->>API: Donnees statistiques
+    API-->>Client: 200 {matches: {...}, anomalies: {...}, evolution: [...]}
+
+    Note over Client, DB: Lancement d'un run via API
+
+    Client->>API: POST /api/runs (Header: Authorization: Bearer eyJhbGci...)
+    API->>JWT: Verifie le token
+    JWT-->>API: Token valide
+    API->>API: run_inventory() (pipeline complet)
+    API-->>Client: 201 {id: N, status: "SUCCESS", vm_count: 45, matched_name_count: 40, no_match_count: 3}
+
+    Note over Client, DB: Acces sans token
+
+    Client->>API: GET /api/stats (sans header Authorization)
+    API->>JWT: Aucun token fourni
+    API-->>Client: 401 {"msg": "Missing Authorization Header"}
+```
+
+---
+
+### 19.10 Index des diagrammes
+
+| N. | Type | Description |
+|----|------|-------------|
+| 19.1 | MCD (Merise) | Modele Conceptuel de Donnees — 5 entites, 5 associations |
+| 19.2 | MLD / Schema relationnel | Modele Logique de Donnees — Tables SQL avec FK |
+| 19.3 | Sequence UML | Authentification web (login / logout via Flask-Login) |
+| 19.4 | Sequence UML | Lancement d'un cycle d'inventaire (pipeline 7 etapes, matching multi-strategie) |
+| 19.5 | Sequence UML | Consultation de l'inventaire avec filtres, tri, export CSV, recherche AJAX |
+| 19.6 | Sequence UML | Comparaison de deux runs (ajouts, suppressions, modifications) |
+| 19.7 | Sequence UML | Detection et consultation des anomalies (6 types) |
+| 19.8 | Sequence UML | Dashboard et statistiques (Chart.js, graphiques interactifs) |
+| 19.9 | Sequence UML | API REST avec authentification JWT (login, endpoints proteges) |

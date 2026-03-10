@@ -55,6 +55,7 @@
           <td>
             {% if anomaly.type == 'NO_MATCH' %}<span class="badge bg-danger">{{ anomaly.type }}</span>
             {% elif anomaly.type == 'STATUS_MISMATCH' %}<span class="badge bg-warning text-dark">{{ anomaly.type }}</span>
+            {% elif anomaly.type == 'HOSTNAME_MISMATCH' %}<span class="badge ci-badge-orange">{{ anomaly.type }}</span>
             {% elif anomaly.type == 'DUPLICATE_DNS' %}<span class="badge bg-primary">{{ anomaly.type }}</span>
             {% elif anomaly.type == 'DUPLICATE_IP' %}<span class="badge bg-info text-dark">{{ anomaly.type }}</span>
             {% else %}<span class="badge bg-secondary">{{ anomaly.type }}</span>{% endif %}

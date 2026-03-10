@@ -13,23 +13,44 @@ class Run(db.Model):
     vm_count = db.Column(db.Integer, default=0)
     ip_count = db.Column(db.Integer, default=0)
     matched_name_count = db.Column(db.Integer, default=0)
+    matched_fqdn_count = db.Column(db.Integer, default=0)
+    matched_ip_count = db.Column(db.Integer, default=0)
     no_match_count = db.Column(db.Integer, default=0)
 
     consolidated_assets = db.relationship("ConsolidatedAsset", backref="run", lazy=True)
     anomalies = db.relationship("Anomaly", backref="run", lazy=True)
+
+    def to_dict(self):
+        """Sérialise le Run en dict JSON-compatible."""
+        return {
+            "id": self.id,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+            "status": self.status,
+            "vm_count": self.vm_count,
+            "ip_count": self.ip_count,
+            "matched_name_count": self.matched_name_count,
+            "matched_fqdn_count": self.matched_fqdn_count or 0,
+            "matched_ip_count": self.matched_ip_count or 0,
+            "no_match_count": self.no_match_count,
+            "error_message": self.error_message,
+        }
 
 
 class Asset(db.Model):
     __tablename__ = "asset"
 
     id = db.Column(db.Integer, primary_key=True)
-    vm_id = db.Column(db.String(50))
-    vm_name = db.Column(db.String(100))
+    vm_id = db.Column(db.String(50), index=True)
+    vm_name = db.Column(db.String(100), index=True)
     type = db.Column(db.String(20))  # qemu / lxc
     node = db.Column(db.String(100))
     status = db.Column(db.String(20))  # running / stopped
     tags = db.Column(db.String(200), nullable=True)
-    ip_reported = db.Column(db.String(45), nullable=True)
+    ip_reported = db.Column(db.String(45), nullable=True, index=True)
+    fqdn = db.Column(db.String(255), nullable=True)
+    os = db.Column(db.String(100), nullable=True)        # OS de la VM
+    annotation = db.Column(db.Text, nullable=True)
 
     # Métriques runtime (Proxmox VE / QEMU Guest Agent)
     cpu_count = db.Column(db.Integer, nullable=True)
@@ -48,11 +69,12 @@ class IpamRecord(db.Model):
     __tablename__ = "ipam_record"
 
     id = db.Column(db.Integer, primary_key=True)
-    ip = db.Column(db.String(45))
-    dns_name = db.Column(db.String(200), nullable=True)
+    ip = db.Column(db.String(45), index=True)
+    dns_name = db.Column(db.String(200), nullable=True, index=True)
     status = db.Column(db.String(50), nullable=True)
     tenant = db.Column(db.String(100), nullable=True)
     site = db.Column(db.String(100), nullable=True)
+    meta_zone = db.Column(db.String(100), nullable=True)
 
     consolidated_assets = db.relationship("ConsolidatedAsset", backref="ipam_record", lazy=True)
 
@@ -61,8 +83,8 @@ class ConsolidatedAsset(db.Model):
     __tablename__ = "consolidated_asset"
 
     id = db.Column(db.Integer, primary_key=True)
-    run_id = db.Column(db.Integer, db.ForeignKey("run.id"), nullable=False)
-    asset_id = db.Column(db.Integer, db.ForeignKey("asset.id"), nullable=False)
+    run_id = db.Column(db.Integer, db.ForeignKey("run.id"), nullable=False, index=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey("asset.id"), nullable=False, index=True)
     ipam_record_id = db.Column(db.Integer, db.ForeignKey("ipam_record.id"), nullable=True)
     ip_final = db.Column(db.String(45), nullable=True)
     dns_final = db.Column(db.String(200), nullable=True)
@@ -75,7 +97,7 @@ class Anomaly(db.Model):
     __tablename__ = "anomaly"
 
     id = db.Column(db.Integer, primary_key=True)
-    run_id = db.Column(db.Integer, db.ForeignKey("run.id"), nullable=False)
+    run_id = db.Column(db.Integer, db.ForeignKey("run.id"), nullable=False, index=True)
     asset_id = db.Column(db.Integer, db.ForeignKey("asset.id"), nullable=False)
     type = db.Column(db.String(50))
     details = db.Column(db.Text)

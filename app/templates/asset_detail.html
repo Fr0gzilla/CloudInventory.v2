@@ -32,6 +32,16 @@
         <small class="text-muted d-block">IP reportee</small>
         <code>{{ asset.ip_reported or '—' }}</code>
       </div>
+      <div class="col-6 col-md-3">
+        <small class="text-muted d-block">FQDN</small>
+        <code>{{ asset.fqdn or '—' }}</code>
+      </div>
+      {% if asset.annotation %}
+      <div class="col-12">
+        <small class="text-muted d-block">Annotation</small>
+        <span>{{ asset.annotation }}</span>
+      </div>
+      {% endif %}
       <div class="col-12">
         <small class="text-muted d-block">Tags</small>
         {% if asset.tags %}
@@ -55,7 +65,7 @@
         <small class="text-muted d-block">CPU</small>
         <strong>{{ asset.cpu_count or '—' }} vCPU</strong>
         {% if asset.cpu_usage is not none %}
-        <div class="progress mt-1" style="height: 6px;" title="CPU {{ asset.cpu_usage }}%">
+        <div class="progress mt-1 ci-progress-sm" title="CPU {{ asset.cpu_usage }}%">
           <div class="progress-bar {% if asset.cpu_usage > 80 %}bg-danger{% elif asset.cpu_usage > 50 %}bg-warning{% else %}bg-success{% endif %}"
                style="width: {{ asset.cpu_usage }}%"></div>
         </div>
@@ -67,7 +77,7 @@
         {% if asset.ram_max %}
           {% set ram_pct = (asset.ram_used / asset.ram_max * 100)|round(1) if asset.ram_max > 0 else 0 %}
           <strong>{{ (asset.ram_used / 1073741824)|round(1) }} / {{ (asset.ram_max / 1073741824)|round(1) }} Go</strong>
-          <div class="progress mt-1" style="height: 6px;" title="RAM {{ ram_pct }}%">
+          <div class="progress mt-1 ci-progress-sm" title="RAM {{ ram_pct }}%">
             <div class="progress-bar {% if ram_pct > 85 %}bg-danger{% elif ram_pct > 60 %}bg-warning{% else %}bg-success{% endif %}"
                  style="width: {{ ram_pct }}%"></div>
           </div>
@@ -81,7 +91,7 @@
         {% if asset.disk_max %}
           {% set disk_pct = (asset.disk_used / asset.disk_max * 100)|round(1) if asset.disk_max > 0 else 0 %}
           <strong>{{ (asset.disk_used / 1073741824)|round(1) }} / {{ (asset.disk_max / 1073741824)|round(1) }} Go</strong>
-          <div class="progress mt-1" style="height: 6px;" title="Disque {{ disk_pct }}%">
+          <div class="progress mt-1 ci-progress-sm" title="Disque {{ disk_pct }}%">
             <div class="progress-bar {% if disk_pct > 90 %}bg-danger{% elif disk_pct > 70 %}bg-warning{% else %}bg-success{% endif %}"
                  style="width: {{ disk_pct }}%"></div>
           </div>
@@ -125,7 +135,7 @@
       </thead>
       <tbody>
         {% for ca, run, ipam in history %}
-        <tr class="{% if ca.match_status == 'NO_MATCH' %}table-danger{% elif ca.match_status == 'MATCHED_NAME' %}table-success{% endif %}">
+        <tr class="{% if ca.match_status == 'NO_MATCH' %}table-danger{% elif ca.match_status == 'MATCHED_IP' %}table-info{% elif ca.match_status == 'MATCHED_FQDN' %}table-warning{% elif ca.match_status == 'MATCHED_NAME' %}table-success{% endif %}">
           <td><a href="{{ url_for('main.run_detail', run_id=run.id) }}" class="text-decoration-none">#{{ run.id }}</a></td>
           <td class="d-none d-sm-table-cell">{{ run.started_at.strftime('%d/%m/%Y %H:%M') if run.started_at else '—' }}</td>
           <td><code class="small">{{ ca.ip_final or '—' }}</code></td>
@@ -137,7 +147,9 @@
             {% else %}—{% endif %}
           </td>
           <td>
-            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED (nom)</span>
+            {% elif ca.match_status == 'MATCHED_FQDN' %}<span class="badge ci-badge-purple">MATCHED (FQDN)</span>
+            {% elif ca.match_status == 'MATCHED_IP' %}<span class="badge bg-info text-dark">MATCHED (IP)</span>
             {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
             {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
           </td>

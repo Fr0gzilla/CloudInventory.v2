@@ -75,12 +75,18 @@ def serialize_inventory_item(ca, asset, ipam):
         "tags": asset.tags,
         "ip": ca.ip_final or "",
         "dns": ca.dns_final or "",
+        "fqdn": asset.fqdn or "",
+        "os": asset.os or "",
+        "annotation": asset.annotation or "",
         "match_status": ca.match_status,
+        "role": ca.role or "Indéterminé",
         "source": ca.source_ip_dns,
         "tenant": ipam.tenant if ipam else None,
         "site": ipam.site if ipam else None,
+        "meta_zone": ipam.meta_zone if ipam else None,
         "cpu_usage": asset.cpu_usage,
         "ram_pct": ram_percent(asset),
+        "disk_pct": disk_percent(asset),
         "uptime": asset.uptime,
     }
 
@@ -91,7 +97,12 @@ def get_stats_data():
     if not last_run:
         return {"has_data": False}
 
-    match_data = {"matched": last_run.matched_name_count, "no_match": last_run.no_match_count}
+    match_data = {
+        "matched_name": last_run.matched_name_count,
+        "matched_fqdn": last_run.matched_fqdn_count or 0,
+        "matched_ip": last_run.matched_ip_count or 0,
+        "no_match": last_run.no_match_count,
+    }
 
     anomaly_stats = (
         db.session.query(Anomaly.type, db.func.count(Anomaly.id))
@@ -105,7 +116,9 @@ def get_stats_data():
     recent_runs.reverse()
     evolution = {
         "labels": [f"#{r.id}" for r in recent_runs],
-        "matched": [r.matched_name_count for r in recent_runs],
+        "matched_name": [r.matched_name_count for r in recent_runs],
+        "matched_fqdn": [r.matched_fqdn_count or 0 for r in recent_runs],
+        "matched_ip": [r.matched_ip_count or 0 for r in recent_runs],
         "no_match": [r.no_match_count for r in recent_runs],
         "vms": [r.vm_count for r in recent_runs],
     }
@@ -143,17 +156,20 @@ def export_inventory_csv(run_id):
     output = io.StringIO()
     writer = csv.writer(output, delimiter=";")
     writer.writerow([
-        "VM", "Node", "Status", "Type", "IP", "DNS", "Statut IP",
-        "Tenant", "Site", "CPU (%)", "RAM (%)", "Disque (%)",
+        "Hostname", "Hote", "Etat", "Type", "IP", "FQDN", "OS",
+        "Note", "Role", "Tenant", "Site", "Meta Zone",
+        "CPU (%)", "RAM (%)", "Disque (%)",
         "Uptime (s)", "Match", "Source",
     ])
     for ca, asset, ipam in rows:
         writer.writerow([
             asset.vm_name, asset.node, asset.status, asset.type,
-            ca.ip_final or "", ca.dns_final or "",
-            ipam.status if ipam else "",
+            ca.ip_final or "", asset.fqdn or "",
+            asset.os or "", asset.annotation or "",
+            ca.role or "Indéterminé",
             ipam.tenant if ipam else "",
             ipam.site if ipam else "",
+            ipam.meta_zone if ipam else "",
             asset.cpu_usage if asset.cpu_usage is not None else "",
             ram_percent(asset) or "", disk_percent(asset) or "",
             asset.uptime if asset.uptime is not None else "",

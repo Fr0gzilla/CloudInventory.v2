@@ -34,11 +34,19 @@
         <small class="text-muted d-block">IPs</small>
         <strong class="fs-5">{{ run.ip_count }}</strong>
       </div>
-      <div class="col-3">
-        <small class="text-muted d-block">Matched</small>
+      <div class="col">
+        <small class="text-muted d-block">Matched (nom)</small>
         <strong class="fs-5 text-success">{{ run.matched_name_count }}</strong>
       </div>
-      <div class="col-3">
+      <div class="col">
+        <small class="text-muted d-block">Matched (FQDN)</small>
+        <strong class="fs-5 ci-purple">{{ run.matched_fqdn_count or 0 }}</strong>
+      </div>
+      <div class="col">
+        <small class="text-muted d-block">Matched (IP)</small>
+        <strong class="fs-5 ci-cyan">{{ run.matched_ip_count or 0 }}</strong>
+      </div>
+      <div class="col">
         <small class="text-muted d-block">No match</small>
         <strong class="fs-5 text-danger">{{ run.no_match_count }}</strong>
       </div>
@@ -67,7 +75,7 @@
       </thead>
       <tbody>
         {% for ca, asset, ipam in inventory %}
-        <tr class="{% if ca.match_status == 'NO_MATCH' %}table-danger{% elif ca.match_status == 'MATCHED_NAME' %}table-success{% endif %}">
+        <tr class="{% if ca.match_status == 'NO_MATCH' %}table-danger{% elif ca.match_status == 'MATCHED_IP' %}table-info{% elif ca.match_status == 'MATCHED_FQDN' %}table-warning{% elif ca.match_status == 'MATCHED_NAME' %}table-success{% endif %}">
           <td><a href="{{ url_for('main.asset_detail', asset_id=asset.id) }}" class="fw-semibold text-decoration-none">{{ asset.vm_name }}</a></td>
           <td>
             {% if asset.status == 'running' %}<span class="badge bg-success">running</span>
@@ -82,7 +90,9 @@
             {% else %}—{% endif %}
           </td>
           <td>
-            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED</span>
+            {% if ca.match_status == 'MATCHED_NAME' %}<span class="badge badge-matched">MATCHED (nom)</span>
+            {% elif ca.match_status == 'MATCHED_FQDN' %}<span class="badge ci-badge-purple">MATCHED (FQDN)</span>
+            {% elif ca.match_status == 'MATCHED_IP' %}<span class="badge bg-info text-dark">MATCHED (IP)</span>
             {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
             {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
           </td>

@@ -1,6 +1,6 @@
 """Routes Flask — dashboard, runs, inventory, assets, anomalies, AJAX."""
 
-from flask import Blueprint, render_template, redirect, url_for, request, jsonify, Response
+from flask import Blueprint, render_template, redirect, url_for, request, jsonify, Response, current_app
 from flask_login import login_required
 from app import db
 from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
@@ -10,8 +10,6 @@ from app.queries import (
 )
 
 main_bp = Blueprint("main", __name__)
-
-PER_PAGE = 25
 
 
 def _get_tag_filters():
@@ -34,11 +32,24 @@ def dashboard():
     last_run = Run.query.order_by(Run.id.desc()).first()
     total_runs = Run.query.count()
     total_assets = Asset.query.count()
-    total_anomalies = Anomaly.query.count() if last_run else 0
+    total_anomalies = 0
+    anomaly_details = {}
+
+    if last_run:
+        anomaly_stats = (
+            db.session.query(Anomaly.type, db.func.count(Anomaly.id))
+            .filter(Anomaly.run_id == last_run.id)
+            .group_by(Anomaly.type)
+            .all()
+        )
+        anomaly_details = {t: c for t, c in anomaly_stats}
+        total_anomalies = sum(anomaly_details.values())
+
     return render_template(
         "dashboard.html", run=last_run,
         total_runs=total_runs, total_assets=total_assets,
         total_anomalies=total_anomalies,
+        anomaly_details=anomaly_details,
     )
 
 
@@ -48,15 +59,7 @@ def dashboard():
 def ajax_trigger_run():
     from collector.inventory_runner import run_inventory
     run = run_inventory()
-    return jsonify({
-        "id": run.id,
-        "status": run.status,
-        "vm_count": run.vm_count,
-        "ip_count": run.ip_count,
-        "matched_name_count": run.matched_name_count,
-        "no_match_count": run.no_match_count,
-        "error_message": run.error_message,
-    })
+    return jsonify(run.to_dict())
 
 
 # ---------- Lancer inventaire (POST classique) ----------
@@ -81,7 +84,7 @@ def ajax_stats():
 def runs_list():
     page = request.args.get("page", 1, type=int)
     pagination = Run.query.order_by(Run.id.desc()).paginate(
-        page=page, per_page=PER_PAGE, error_out=False
+        page=page, per_page=current_app.config["PER_PAGE"], error_out=False
     )
     all_runs = Run.query.filter(Run.status == "SUCCESS").order_by(Run.id.desc()).all()
     return render_template("runs.html", runs=pagination.items, pagination=pagination, all_runs=all_runs)
@@ -133,7 +136,7 @@ def inventory():
     page = request.args.get("page", 1, type=int)
 
     query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
-    pagination = query.paginate(page=page, per_page=PER_PAGE, error_out=False)
+    pagination = query.paginate(page=page, per_page=current_app.config["PER_PAGE"], error_out=False)
 
     filters = {
         "statuses": [r[0] for r in db.session.query(Asset.status).distinct().all()],
@@ -177,13 +180,15 @@ def ajax_inventory_search():
         items.append({
             "id": asset.id,
             "vm_name": asset.vm_name,
+            "node": asset.node,
             "status": asset.status,
+            "type": asset.type,
             "ip": ca.ip_final or "",
-            "dns": ca.dns_final or "",
-            "tenant": ipam.tenant if ipam else None,
-            "site": ipam.site if ipam else None,
-            "cpu_usage": asset.cpu_usage,
-            "ram_pct": ram_percent(asset),
+            "fqdn": asset.fqdn or "",
+            "os": asset.os or "",
+            "annotation": asset.annotation or "",
+            "role": ca.role or "Indéterminé",
+            "meta_zone": ipam.meta_zone if ipam else "",
             "match_status": ca.match_status,
         })
 
@@ -246,15 +251,15 @@ def anomalies_list():
     )
 
     anomaly_type = request.args.get("type", "")
-    run_id = request.args.get("run", "")
+    run_id = request.args.get("run", type=int)
 
     if anomaly_type:
         query = query.filter(Anomaly.type == anomaly_type)
     if run_id:
-        query = query.filter(Anomaly.run_id == int(run_id))
+        query = query.filter(Anomaly.run_id == run_id)
 
     page = request.args.get("page", 1, type=int)
-    pagination = query.paginate(page=page, per_page=PER_PAGE, error_out=False)
+    pagination = query.paginate(page=page, per_page=current_app.config["PER_PAGE"], error_out=False)
 
     types = [r[0] for r in db.session.query(Anomaly.type).distinct().all()]
     run_ids = [r[0] for r in db.session.query(Anomaly.run_id).distinct().order_by(Anomaly.run_id.desc()).all()]

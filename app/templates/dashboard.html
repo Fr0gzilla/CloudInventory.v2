@@ -20,7 +20,7 @@
 
 <!-- Stats cards -->
 <div class="row g-3 mb-4">
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
     <div class="card h-100">
       <div class="card-body text-center py-3">
         <div class="fs-2 fw-bold text-primary">{{ run.vm_count if run else 0 }}</div>
@@ -28,15 +28,31 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
     <div class="card h-100">
       <div class="card-body text-center py-3">
         <div class="fs-2 fw-bold text-success">{{ run.matched_name_count if run else 0 }}</div>
-        <small class="text-muted"><i class="bi bi-check-circle me-1"></i>Matched</small>
+        <small class="text-muted"><i class="bi bi-check-circle me-1"></i>Matched (nom)</small>
       </div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold ci-purple">{{ run.matched_fqdn_count or 0 if run else 0 }}</div>
+        <small class="text-muted"><i class="bi bi-globe me-1"></i>Matched (FQDN)</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card h-100">
+      <div class="card-body text-center py-3">
+        <div class="fs-2 fw-bold ci-cyan">{{ run.matched_ip_count or 0 if run else 0 }}</div>
+        <small class="text-muted"><i class="bi bi-hdd-network me-1"></i>Matched (IP)</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
     <div class="card h-100">
       <div class="card-body text-center py-3">
         <div class="fs-2 fw-bold text-danger">{{ run.no_match_count if run else 0 }}</div>
@@ -44,7 +60,7 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-lg-3">
+  <div class="col-6 col-lg">
     <div class="card h-100">
       <div class="card-body text-center py-3">
         <div class="fs-2 fw-bold text-warning">{{ total_anomalies }}</div>
@@ -53,6 +69,36 @@
     </div>
   </div>
 </div>
+
+{% if run and anomaly_details %}
+<!-- Alerte anomalies -->
+<div class="alert alert-warning ci-alert-anomalies alert-dismissible fade show mb-4" role="alert">
+  <div class="d-flex align-items-start">
+    <i class="bi bi-shield-exclamation fs-4 text-danger me-3 mt-1"></i>
+    <div>
+      <h6 class="alert-heading mb-1">
+        <strong>{{ total_anomalies }} anomalie{{ 's' if total_anomalies > 1 else '' }}</strong> detectee{{ 's' if total_anomalies > 1 else '' }} sur le run #{{ run.id }}
+      </h6>
+      <div>
+        {% for atype, acount in anomaly_details.items() %}
+        <span class="badge ci-anomaly-type
+          {% if atype == 'NO_MATCH' %}bg-danger
+          {% elif atype == 'STATUS_MISMATCH' %}bg-warning text-dark
+          {% elif atype == 'HOSTNAME_MISMATCH' %}ci-badge-orange
+          {% elif atype in ('DUPLICATE_DNS', 'DUPLICATE_IP') %}ci-badge-purple
+          {% else %}bg-secondary{% endif %}">
+          {{ atype }} : {{ acount }}
+        </span>
+        {% endfor %}
+      </div>
+      <a href="{{ url_for('main.anomalies_list', run=run.id) }}" class="btn btn-sm btn-outline-danger mt-2">
+        <i class="bi bi-search me-1"></i>Voir les anomalies
+      </a>
+    </div>
+  </div>
+  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Fermer"></button>
+</div>
+{% endif %}
 
 {% if run %}
 <!-- Dernier run -->
@@ -147,7 +193,9 @@ function launchRun() {
       if (data.status === 'SUCCESS') {
         result.className = 'alert alert-success';
         result.innerHTML = '<i class="bi bi-check-circle me-1"></i>Run #' + data.id + ' — ' +
-          data.matched_name_count + ' matched, ' + data.no_match_count + ' no match. <a href="/runs/' + data.id + '">Voir le détail</a>';
+          data.matched_name_count + ' matched (nom), ' + data.matched_fqdn_count + ' matched (FQDN), ' +
+          data.matched_ip_count + ' matched (IP), ' +
+          data.no_match_count + ' no match. <a href="/runs/' + data.id + '">Voir le détail</a>';
       } else {
         result.className = 'alert alert-danger';
         result.innerHTML = '<i class="bi bi-x-circle me-1"></i>Run #' + data.id + ' échoué : ' + (data.error_message || 'Erreur inconnue');
@@ -173,7 +221,7 @@ fetch('{{ url_for("main.ajax_stats") }}')
     var chartOpts = {responsive: true, maintainAspectRatio: true, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 10, font: {size: 11}}}}};
     new Chart(document.getElementById('chartMatch'), {
       type: 'doughnut',
-      data: {labels: ['Matched', 'No Match'], datasets: [{data: [data.match.matched, data.match.no_match], backgroundColor: ['#198754', '#dc3545'], borderWidth: 0}]},
+      data: {labels: ['Matched (nom)', 'Matched (FQDN)', 'Matched (IP)', 'No Match'], datasets: [{data: [data.match.matched_name, data.match.matched_fqdn, data.match.matched_ip, data.match.no_match], backgroundColor: ['#198754', '#6f42c1', '#0dcaf0', '#dc3545'], borderWidth: 0}]},
       options: chartOpts
     });
     var aLabels = Object.keys(data.anomalies);
@@ -187,7 +235,9 @@ fetch('{{ url_for("main.ajax_stats") }}')
     new Chart(document.getElementById('chartEvolution'), {
       type: 'line',
       data: {labels: data.evolution.labels, datasets: [
-        {label: 'Matched', data: data.evolution.matched, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', fill: true, tension: 0.3, pointRadius: 4},
+        {label: 'Matched (nom)', data: data.evolution.matched_name, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,0.1)', fill: true, tension: 0.3, pointRadius: 4},
+        {label: 'Matched (FQDN)', data: data.evolution.matched_fqdn, borderColor: '#6f42c1', backgroundColor: 'rgba(111,66,193,0.1)', fill: true, tension: 0.3, pointRadius: 4},
+        {label: 'Matched (IP)', data: data.evolution.matched_ip, borderColor: '#0dcaf0', backgroundColor: 'rgba(13,202,240,0.1)', fill: true, tension: 0.3, pointRadius: 4},
         {label: 'No Match', data: data.evolution.no_match, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,0.1)', fill: true, tension: 0.3, pointRadius: 4},
       ]},
       options: {responsive: true, maintainAspectRatio: true, plugins: {legend: {position: 'bottom', labels: {boxWidth: 12, padding: 10, font: {size: 11}}}}, scales: {y: {beginAtZero: true}}}

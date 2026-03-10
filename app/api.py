@@ -1,14 +1,19 @@
 """[API] API REST — endpoints JSON protégés par JWT."""
 
 import os
+import logging
 from flask import Blueprint, request, jsonify, Response
 from flask_jwt_extended import create_access_token, jwt_required
 from app import db
 from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
+from app.auth import _get_admin_password_hash
 from app.queries import (
     build_inventory_query, serialize_inventory_item, ram_percent, disk_percent,
     get_stats_data, get_run_comparison_data, export_inventory_csv,
 )
+from werkzeug.security import check_password_hash
+
+logger = logging.getLogger("cloudinventory.api")
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 
@@ -57,12 +62,13 @@ def api_login():
     password = data.get("password", "")
 
     admin_username = os.getenv("ADMIN_USERNAME", "admin")
-    admin_password = os.getenv("ADMIN_PASSWORD", "admin")
+    pw_hash = _get_admin_password_hash()
 
-    if username != admin_username or password != admin_password:
+    if username != admin_username or not check_password_hash(pw_hash, password):
         return jsonify({"error": "Identifiants incorrects"}), 401
 
     token = create_access_token(identity=username)
+    logger.info("Connexion API réussie pour '%s'", username)
     return jsonify({"access_token": token}), 200
 
 
@@ -117,19 +123,7 @@ def api_runs_list():
         page=page, per_page=per_page, error_out=False
     )
 
-    runs = []
-    for r in pagination.items:
-        runs.append({
-            "id": r.id,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "ended_at": r.ended_at.isoformat() if r.ended_at else None,
-            "status": r.status,
-            "vm_count": r.vm_count,
-            "ip_count": r.ip_count,
-            "matched_name_count": r.matched_name_count,
-            "no_match_count": r.no_match_count,
-            "error_message": r.error_message,
-        })
+    runs = [r.to_dict() for r in pagination.items]
 
     return jsonify({
         "runs": runs,
@@ -154,15 +148,7 @@ def api_trigger_run():
     """
     from collector.inventory_runner import run_inventory
     run = run_inventory()
-    return jsonify({
-        "id": run.id,
-        "status": run.status,
-        "vm_count": run.vm_count,
-        "ip_count": run.ip_count,
-        "matched_name_count": run.matched_name_count,
-        "no_match_count": run.no_match_count,
-        "error_message": run.error_message,
-    }), 201
+    return jsonify(run.to_dict()), 201
 
 
 @api_bp.route("/runs/<int:run_id>", methods=["GET"])
@@ -214,19 +200,10 @@ def api_run_detail(run_id):
             "asset": {"id": asset.id, "vm_name": asset.vm_name},
         })
 
-    return jsonify({
-        "id": run.id,
-        "started_at": run.started_at.isoformat() if run.started_at else None,
-        "ended_at": run.ended_at.isoformat() if run.ended_at else None,
-        "status": run.status,
-        "vm_count": run.vm_count,
-        "ip_count": run.ip_count,
-        "matched_name_count": run.matched_name_count,
-        "no_match_count": run.no_match_count,
-        "error_message": run.error_message,
-        "inventory": inventory,
-        "anomalies": anomalies,
-    })
+    result = run.to_dict()
+    result["inventory"] = inventory
+    result["anomalies"] = anomalies
+    return jsonify(result)
 
 
 @api_bp.route("/runs/compare", methods=["GET"])
@@ -327,7 +304,7 @@ def api_inventory():
       - name: match
         in: query
         type: string
-        enum: [MATCHED_NAME, MATCHED_IP, NO_MATCH]
+        enum: [MATCHED_NAME, MATCHED_FQDN, MATCHED_IP, NO_MATCH]
       - name: tag
         in: query
         type: string
@@ -485,6 +462,8 @@ def api_asset_detail(asset_id):
         "status": asset.status,
         "tags": asset.tags,
         "ip_reported": asset.ip_reported,
+        "fqdn": asset.fqdn,
+        "annotation": asset.annotation,
         "cpu_count": asset.cpu_count,
         "cpu_usage": asset.cpu_usage,
         "ram_max": asset.ram_max,
@@ -569,5 +548,51 @@ def api_anomalies():
         "pages": pagination.pages,
         "total": pagination.total,
     })
+
+
+# ──────────────────────────────────────────────
+# PURGE — suppression des anciens runs
+# ──────────────────────────────────────────────
+@api_bp.route("/runs/purge", methods=["POST"])
+@jwt_required()
+def api_purge_runs():
+    """Purger les anciens runs (garder les N derniers)
+    ---
+    tags:
+      - Runs
+    security:
+      - Bearer: []
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            keep:
+              type: integer
+              default: 30
+              description: Nombre de runs a conserver
+    responses:
+      200:
+        description: Nombre de runs supprimes
+    """
+    data = request.get_json(silent=True) or {}
+    keep = data.get("keep", 30)
+    if not isinstance(keep, int) or keep < 1:
+        return jsonify({"error": "Le paramètre 'keep' doit être un entier >= 1"}), 400
+
+    all_runs = Run.query.order_by(Run.id.desc()).all()
+    to_delete = all_runs[keep:]
+
+    deleted = 0
+    for run in to_delete:
+        Anomaly.query.filter_by(run_id=run.id).delete()
+        ConsolidatedAsset.query.filter_by(run_id=run.id).delete()
+        db.session.delete(run)
+        deleted += 1
+
+    db.session.commit()
+    logger.info("Purge : %d runs supprimés (conservé les %d derniers)", deleted, keep)
+    return jsonify({"deleted": deleted, "kept": keep})
 
 
