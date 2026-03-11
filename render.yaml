@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: cloudinventory
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn run:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///cloudinventory.db
+      - key: USE_MOCK_VIRT
+        value: "true"
+      - key: USE_MOCK_IPAM
+        value: "true"
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SMTP_ENABLED
+        value: "false"
+      - key: EXPORT_ENABLED
+        value: "true"
+      - key: EXPORT_LOCAL_PATH
+        value: exports

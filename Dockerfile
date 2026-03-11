@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 5050
 
-CMD ["python", "run.py"]
+CMD ["gunicorn", "run:app", "--bind", "0.0.0.0:5050"]
