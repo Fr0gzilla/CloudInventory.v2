@@ -84,6 +84,11 @@ CloudInventory automatise la collecte, la consolidation et l'analyse des donnees
 | OF9 | Comparer deux executions (runs) pour suivre l'evolution | Moyenne |
 | OF10 | Consulter l'historique detaille de chaque asset sur 30 runs | Moyenne |
 | OF11 | Exposer une API REST documentee (Swagger/OpenAPI) | Moyenne |
+| OF12 | Notifications email SMTP en cas d'anomalies (rapport HTML) | Moyenne |
+| OF13 | Notifications webhook apres chaque run avec anomalies | Faible |
+| OF14 | Exports automatiques apres chaque run (JSONL.gz consolide, rapport MD) | Moyenne |
+| OF15 | Stockage des exports sur serveur Samba ou dossier local | Moyenne |
+| OF16 | Retention automatique des exports (30j consolides, 7j bruts) | Faible |
 
 ### 3.2 Objectifs techniques
 
@@ -94,8 +99,10 @@ CloudInventory automatise la collecte, la consolidation et l'analyse des donnees
 | OT3 | Architecture modulaire (Blueprints Flask) | Haute |
 | OT4 | Sources interchangeables (mock / API reelle) via variables d'environnement | Haute |
 | OT5 | Conteneurisation Docker | Moyenne |
-| OT6 | Couverture de tests automatises (58 tests) | Moyenne |
+| OT6 | Couverture de tests automatises (81 tests) | Moyenne |
 | OT7 | Interface responsive (mobile/tablette/desktop) | Moyenne |
+| OT8 | Systeme d'exports automatiques avec retention configurable | Moyenne |
+| OT9 | Integration SMTP pour notifications email HTML | Moyenne |
 
 ---
 
@@ -112,12 +119,20 @@ CloudInventory automatise la collecte, la consolidation et l'analyse des donnees
 - Export CSV de l'inventaire.
 - Comparaison entre deux executions.
 - Deploiement Docker.
+- **Notifications email SMTP** (rapport HTML avec stats, badges, tableau d'anomalies).
+- **Notifications webhook** apres chaque run avec anomalies.
+- **Badge d'anomalies** dans la navbar et **bandeau d'alerte** sur le dashboard.
+- **Exports automatiques** apres chaque run :
+  - Export consolide **JSONL.gz** (1 ligne = 1 VM, retention 30 jours).
+  - Rapport de run **Markdown** (ecrase a chaque execution).
+  - Exports bruts **JSON.gz** optionnels (retention 7 jours, pour debug/rejeu).
+- **Stockage configurable** : dossier local ou partage **Samba** (SMB).
+- **Politique de retention** automatique avec nettoyage des fichiers expires.
 
 ### 4.2 Hors perimetre (evolutions futures)
 
 - Planification automatique des collectes (cron/scheduler).
 - Gestion multi-utilisateurs avec roles et permissions.
-- Notifications par email ou webhook en cas d'anomalie critique.
 - Tableaux de bord personnalisables.
 - HTTPS en production.
 
@@ -557,6 +572,82 @@ VM, Noeud, Statut, Type, IP, DNS, CPU (%), RAM (%), Disque (%), Uptime, Match, S
 
 ---
 
+### 8.9 Notifications et alertes
+
+**Description** : Systeme de notification multi-canal declenche automatiquement a la fin de chaque run.
+
+**A. Badge navbar**
+
+- Badge rouge pulse sur le lien "Anomalies" dans la barre de navigation.
+- Affiche le nombre d'anomalies du dernier run.
+- Visible sur toutes les pages via un context processor Flask.
+
+**B. Bandeau d'alerte dashboard**
+
+- Banniere d'alerte sur le dashboard avec detail par type d'anomalie.
+- Badges colores par type (NO_MATCH rouge, STATUS_MISMATCH jaune, HOSTNAME_MISMATCH orange, DUPLICATE violet).
+- Lien direct vers la page d'anomalies filtree par run.
+- Dismissible via bouton Bootstrap.
+
+**C. Notification email SMTP**
+
+- Email HTML envoye automatiquement a chaque run avec anomalies.
+- Contenu : header CloudInventory, banniere d'alerte, 4 stats en gros chiffres (VMs, Match nom, Match FQDN, Match IP), barre de progression du taux de correspondance, badges colores par type, tableau detaille de chaque anomalie (type, VM, details).
+- Configuration via variables d'environnement (`SMTP_ENABLED`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USE_TLS`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO`).
+- Compatible Gmail (mots de passe d'application), Outlook, serveurs SMTP standards.
+
+**D. Notification webhook**
+
+- POST JSON vers une URL configurable (`WEBHOOK_URL`) avec le resume du run et le nombre d'anomalies.
+
+---
+
+### 8.10 Methode de stockage et exports
+
+**Description** : A chaque execution du pipeline, des exports sont generes et deposes sur un dossier local ou un serveur Samba.
+
+**A. Export consolide (JSONL.gz)**
+
+- **Format** : JSONL compresse (1 ligne = 1 VM consolidee avec tous les champs).
+- **Fichier** : `exports/consolidated/run_{id}_{date}.jsonl.gz`
+- **Retention** : 30 jours (configurable via `EXPORT_RETENTION_CONSOLIDATED`).
+- **Contenu par ligne** : vm_id, vm_name, type, node, status, tags, ip_reported, fqdn, os, metriques CPU/RAM/disque, ip_final, dns_final, match_status, role, donnees IPAM associees.
+- **Usage** : inventaire final exploitable, historique glissant, audit.
+
+**B. Rapport de run (Markdown)**
+
+- **Format** : Markdown lisible (`report.md`).
+- **Fichier** : `exports/report.md` (ecrase a chaque execution).
+- **Contenu** : statut du run, date debut/fin, tableau des resultats (VMs, matchs, taux de correspondance), anomalies par type avec detail (type, VM, description).
+- **Usage** : verification rapide du dernier run, lisible dans un navigateur Git ou editeur.
+
+**C. Exports bruts (JSON.gz) — optionnel**
+
+- **Format** : JSON compresse.
+- **Fichiers** : `exports/raw/vms_run_{id}_{date}.json.gz`, `exports/raw/ipam_run_{id}_{date}.json.gz`
+- **Retention** : 7 jours (configurable via `EXPORT_RETENTION_RAW`).
+- **Activation** : `EXPORT_RAW_ENABLED=true` (desactive par defaut).
+- **Usage** : debug, rejeu de la consolidation sans nouvel appel API.
+
+**D. Stockage**
+
+- **Local** : dossier `exports/` a la racine du projet (par defaut).
+- **Samba** : chemin UNC configurable via `EXPORT_SMB_PATH` (ex: `\\serveur\partage\cloudinventory`).
+- **Nettoyage automatique** : suppression des fichiers au-dela de la duree de retention a chaque run.
+
+**E. Configuration**
+
+| Variable | Defaut | Description |
+|----------|--------|-------------|
+| `EXPORT_ENABLED` | `true` | Active/desactive les exports |
+| `EXPORT_LOCAL_PATH` | `exports` | Chemin du dossier local |
+| `EXPORT_SMB_PATH` | _(vide)_ | Chemin Samba (prioritaire sur local) |
+| `EXPORT_RETENTION_CONSOLIDATED` | `30` | Retention des exports consolides (jours) |
+| `EXPORT_RETENTION_RAW` | `7` | Retention des exports bruts (jours) |
+| `EXPORT_RAW_ENABLED` | `false` | Active les exports bruts |
+
+---
+
 ## 9. API REST
 
 ### 9.1 Generalites
@@ -866,7 +957,8 @@ pytest tests/ -v
 |-----------|-------------|------------|
 | Planification | Execution automatique des inventaires (cron ou APScheduler) | Faible |
 | Multi-utilisateurs | Gestion de comptes avec roles (admin, lecteur) | Moyenne |
-| Notifications | Alertes email/webhook en cas d'anomalie critique | Moyenne |
+| ~~Notifications~~ | ~~Alertes email/webhook en cas d'anomalie critique~~ | **Implemente** |
+| ~~Exports/Stockage~~ | ~~Exports JSONL.gz, rapport MD, stockage Samba~~ | **Implemente** |
 | Metriques avancees | Graphiques d'evolution CPU/RAM/disque par asset | Moyenne |
 | HTTPS | Certificat SSL pour le deploiement en production | Faible |
 | Backup automatique | Sauvegarde planifiee de la base SQLite | Faible |
@@ -882,7 +974,7 @@ pytest tests/ -v
 | Code source | Git (GitHub) | Application complete avec historique de commits |
 | Documentation technique | Markdown | Cahier des charges, diagrammes UML, fiche E5 |
 | Diagrammes UML | Mermaid (Markdown) | MCD, MLD, diagrammes de sequence |
-| Tests automatises | Python (pytest) | 58 tests couvrant modeles, routes, API, consolidation |
+| Tests automatises | Python (pytest) | 81 tests couvrant modeles, routes, API, consolidation, alertes |
 | Conteneur Docker | Dockerfile + docker-compose | Deploiement conteneurise pret a l'emploi |
 | Documentation API | Swagger/OpenAPI | Documentation interactive accessible sur `/apidocs` |
 
@@ -911,6 +1003,11 @@ pytest tests/ -v
 | **Mock** | Donnees simulees remplacant une source reelle pour le developpement/test |
 | **Upsert** | Operation combinant insertion et mise a jour (insert or update) |
 | **Zone reseau** | Segmentation logique du reseau (ZM=metier, ZCS=controle, ZE=essai) |
+| **SMTP** | Simple Mail Transfer Protocol — protocole d'envoi d'emails |
+| **JSONL** | JSON Lines — format ou chaque ligne est un objet JSON independant |
+| **Samba/SMB** | Protocole de partage de fichiers en reseau (Server Message Block) |
+| **Retention** | Duree de conservation des fichiers avant suppression automatique |
+| **Webhook** | Appel HTTP automatique vers un service externe en reaction a un evenement |
 
 ---
 
