@@ -13,3 +13,5 @@ instance/
 netbox-docker/
 mdpdf.log
 *.pdf
+exports/
+cookies.txt

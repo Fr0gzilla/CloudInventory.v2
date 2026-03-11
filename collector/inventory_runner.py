@@ -41,7 +41,7 @@ def _notify_webhook(run, anomaly_count):
 
 
 def _notify_email(run, anomaly_count, anomaly_details):
-    """Envoie un email récapitulatif si SMTP configuré et si des anomalies existent."""
+    """Envoie un email HTML récapitulatif si SMTP configuré et si des anomalies existent."""
     try:
         import smtplib
         from email.mime.text import MIMEText
@@ -54,25 +54,126 @@ def _notify_email(run, anomaly_count, anomaly_details):
         if not smtp_to:
             return
 
-        # Construction du corps du mail
-        lines = [
-            f"CloudInventory — Run #{run.id} termine",
-            f"Statut : {run.status}",
-            f"VMs collectees : {run.vm_count}",
-            f"IPs IPAM : {run.ip_count}",
-            "",
-            f"Anomalies detectees : {anomaly_count}",
-            "---",
-        ]
-        for atype, acount in anomaly_details.items():
-            lines.append(f"  {atype} : {acount}")
-        lines.extend([
-            "",
-            "Connectez-vous au dashboard pour consulter le detail.",
-        ])
+        # Récupérer le détail des anomalies pour le tableau
+        anomaly_rows = (
+            db.session.query(Anomaly, Asset)
+            .join(Asset, Anomaly.asset_id == Asset.id)
+            .filter(Anomaly.run_id == run.id)
+            .order_by(Anomaly.type)
+            .all()
+        )
 
-        msg = MIMEText("\n".join(lines), "plain", "utf-8")
-        msg["Subject"] = f"[CloudInventory] Run #{run.id} — {anomaly_count} anomalie(s)"
+        # Couleurs par type d'anomalie (bg, text)
+        type_colors = {
+            "NO_MATCH": ("#dc3545", "#fff"),
+            "STATUS_MISMATCH": ("#ffc107", "#000"),
+            "HOSTNAME_MISMATCH": ("#fd7e14", "#fff"),
+            "DUPLICATE_DNS": ("#6f42c1", "#fff"),
+            "DUPLICATE_IP": ("#6f42c1", "#fff"),
+        }
+
+        # Lignes du tableau anomalies
+        anomaly_table_rows = ""
+        for anomaly, asset in anomaly_rows:
+            bg, fg = type_colors.get(anomaly.type, ("#6c757d", "#fff"))
+            anomaly_table_rows += f"""
+            <tr>
+              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;">
+                <span style="background:{bg};color:{fg};padding:2px 8px;border-radius:4px;font-size:12px;">{anomaly.type}</span>
+              </td>
+              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;font-weight:600;">{asset.vm_name}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;color:#6c757d;font-size:13px;">{anomaly.details or ''}</td>
+            </tr>"""
+
+        # Badges résumé par type
+        type_badges = ""
+        for atype, acount in anomaly_details.items():
+            bg, fg = type_colors.get(atype, ("#6c757d", "#fff"))
+            type_badges += f'<span style="display:inline-block;background:{bg};color:{fg};padding:4px 10px;border-radius:12px;font-size:13px;margin:3px 6px 3px 0;">{atype}: {acount}</span> '
+
+        # Calcul du taux de matching
+        total_vms = run.vm_count or 0
+        matched_total = (run.matched_name_count or 0) + (run.matched_fqdn_count or 0) + (run.matched_ip_count or 0)
+        match_rate = round(matched_total / total_vms * 100, 1) if total_vms > 0 else 0
+
+        ended = run.ended_at.strftime('%d/%m/%Y %H:%M:%S') if run.ended_at else '—'
+
+        html = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:Segoe UI,Arial,sans-serif;">
+<div style="max-width:650px;margin:20px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 100%);padding:24px 30px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:22px;">CloudInventory</h1>
+    <p style="color:#8892b0;margin:6px 0 0;font-size:14px;">Rapport d'inventaire automatique</p>
+  </div>
+
+  <!-- Alert banner -->
+  <div style="background:#fff3cd;border-left:4px solid #dc3545;padding:16px 24px;margin:20px 24px;border-radius:6px;">
+    <strong style="color:#dc3545;font-size:16px;">&#9888; {anomaly_count} anomalie{'s' if anomaly_count > 1 else ''} detectee{'s' if anomaly_count > 1 else ''}</strong>
+    <p style="margin:8px 0 0;color:#664d03;font-size:14px;">Run <strong>#{run.id}</strong> termine le {ended}</p>
+  </div>
+
+  <!-- Stats -->
+  <div style="padding:0 24px;">
+    <h2 style="font-size:16px;color:#1a1a2e;border-bottom:2px solid #e9ecef;padding-bottom:8px;">Resultats du run</h2>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+      <tr>
+        <td style="padding:10px;text-align:center;width:25%;">
+          <div style="font-size:28px;font-weight:700;color:#0d6efd;">{total_vms}</div>
+          <div style="font-size:12px;color:#6c757d;">VMs collectees</div>
+        </td>
+        <td style="padding:10px;text-align:center;width:25%;">
+          <div style="font-size:28px;font-weight:700;color:#198754;">{run.matched_name_count or 0}</div>
+          <div style="font-size:12px;color:#6c757d;">Match nom</div>
+        </td>
+        <td style="padding:10px;text-align:center;width:25%;">
+          <div style="font-size:28px;font-weight:700;color:#6f42c1;">{run.matched_fqdn_count or 0}</div>
+          <div style="font-size:12px;color:#6c757d;">Match FQDN</div>
+        </td>
+        <td style="padding:10px;text-align:center;width:25%;">
+          <div style="font-size:28px;font-weight:700;color:#0dcaf0;">{run.matched_ip_count or 0}</div>
+          <div style="font-size:12px;color:#6c757d;">Match IP</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Match rate bar -->
+    <div style="background:#e9ecef;border-radius:8px;height:24px;overflow:hidden;margin-bottom:6px;">
+      <div style="background:linear-gradient(90deg,#198754,#0dcaf0);height:100%;width:{match_rate}%;border-radius:8px;"></div>
+    </div>
+    <p style="text-align:center;font-size:13px;color:#6c757d;margin:0 0 20px;">Taux de correspondance : <strong>{match_rate}%</strong> ({matched_total}/{total_vms})</p>
+
+    <!-- Anomaly summary -->
+    <h2 style="font-size:16px;color:#1a1a2e;border-bottom:2px solid #e9ecef;padding-bottom:8px;">Anomalies par type</h2>
+    <p style="margin:12px 0 16px;">{type_badges}</p>
+
+    <!-- Anomaly detail table -->
+    <h2 style="font-size:16px;color:#1a1a2e;border-bottom:2px solid #e9ecef;padding-bottom:8px;">Detail des anomalies</h2>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:14px;">
+      <tr style="background:#f8f9fa;">
+        <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6c757d;text-transform:uppercase;">Type</th>
+        <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6c757d;text-transform:uppercase;">VM</th>
+        <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6c757d;text-transform:uppercase;">Details</th>
+      </tr>
+      {anomaly_table_rows}
+    </table>
+  </div>
+
+  <!-- Footer -->
+  <div style="background:#f8f9fa;padding:16px 24px;text-align:center;border-top:1px solid #e9ecef;">
+    <p style="margin:0;font-size:12px;color:#adb5bd;">CloudInventory — Notification automatique</p>
+  </div>
+
+</div>
+</body>
+</html>"""
+
+        msg = MIMEText(html, "html", "utf-8")
+        msg["Subject"] = f"[CloudInventory] Run #{run.id} — {anomaly_count} anomalie{'s' if anomaly_count > 1 else ''}"
         msg["From"] = current_app.config["SMTP_FROM"]
         msg["To"] = smtp_to
 
@@ -483,6 +584,13 @@ def run_inventory():
         anomaly_count = sum(anomaly_details.values())
         _notify_webhook(run, anomaly_count)
         _notify_email(run, anomaly_count, anomaly_details)
+
+        # 8. Exports (consolidé JSONL.gz, rapport MD, bruts JSON.gz)
+        try:
+            from collector.exporter import run_exports
+            run_exports(run.id, anomaly_details, vm_list=vm_list, ipam_list=ipam_raw)
+        except Exception as export_err:
+            logger.warning("Echec exports : %s", export_err)
 
     except Exception as e:
         logger.error("Run #%d échoué : %s", run.id, e, exc_info=True)

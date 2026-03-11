@@ -92,6 +92,14 @@ def create_app():
     app.config["SMTP_FROM"] = os.getenv("SMTP_FROM", "cloudinventory@localhost")
     app.config["SMTP_TO"] = os.getenv("SMTP_TO", "")
 
+    # Exports (Samba / local)
+    app.config["EXPORT_ENABLED"] = os.getenv("EXPORT_ENABLED", "true").lower() == "true"
+    app.config["EXPORT_LOCAL_PATH"] = os.getenv("EXPORT_LOCAL_PATH", "")
+    app.config["EXPORT_SMB_PATH"] = os.getenv("EXPORT_SMB_PATH", "")
+    app.config["EXPORT_RETENTION_CONSOLIDATED"] = int(os.getenv("EXPORT_RETENTION_CONSOLIDATED", "30"))
+    app.config["EXPORT_RETENTION_RAW"] = int(os.getenv("EXPORT_RETENTION_RAW", "7"))
+    app.config["EXPORT_RAW_ENABLED"] = os.getenv("EXPORT_RAW_ENABLED", "false").lower() == "true"
+
     # Context processor : injecte le compteur d'anomalies du dernier run dans tous les templates
     @app.context_processor
     def inject_anomaly_badge():
