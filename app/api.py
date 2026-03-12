@@ -19,6 +19,30 @@ api_bp = Blueprint("api", __name__, url_prefix="/api")
 
 
 # ──────────────────────────────────────────────
+# HEALTH — statut de l'application (pas de JWT)
+# ──────────────────────────────────────────────
+@api_bp.route("/health", methods=["GET"])
+def api_health():
+    """Healthcheck de l'application
+    ---
+    tags:
+      - Health
+    responses:
+      200:
+        description: Statut de l'application et dernier run
+    """
+    from app import APP_VERSION
+    from app.scheduler import get_scheduler_info
+    last_run = Run.query.order_by(Run.id.desc()).first()
+    return jsonify({
+        "status": "ok",
+        "version": APP_VERSION,
+        "last_run": last_run.to_dict() if last_run else None,
+        "scheduler": get_scheduler_info(),
+    })
+
+
+# ──────────────────────────────────────────────
 # ! AUTH — obtenir un token JWT
 # ──────────────────────────────────────────────
 @api_bp.route("/login", methods=["POST"])
@@ -308,6 +332,14 @@ def api_inventory():
       - name: tag
         in: query
         type: string
+      - name: role
+        in: query
+        type: string
+        description: Filtrer par role fonctionnel
+      - name: zone
+        in: query
+        type: string
+        description: Filtrer par meta zone IPAM
       - name: sort
         in: query
         type: string
@@ -340,12 +372,14 @@ def api_inventory():
     vm_type = request.args.get("type", "")
     match = request.args.get("match", "")
     tag = request.args.get("tag", "")
+    role = request.args.get("role", "")
+    zone = request.args.get("zone", "")
     sort = request.args.get("sort", "vm_name")
     order = request.args.get("order", "asc")
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 25, type=int)
 
-    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
+    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, role, zone, sort, order)
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
     items = [serialize_inventory_item(ca, asset, ipam) for ca, asset, ipam in pagination.items]

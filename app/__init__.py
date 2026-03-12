@@ -100,6 +100,11 @@ def create_app():
     app.config["EXPORT_RETENTION_RAW"] = int(os.getenv("EXPORT_RETENTION_RAW", "7"))
     app.config["EXPORT_RAW_ENABLED"] = os.getenv("EXPORT_RAW_ENABLED", "false").lower() == "true"
 
+    # Scheduler (inventaire automatique)
+    app.config["SCHEDULER_ENABLED"] = os.getenv("SCHEDULER_ENABLED", "false").lower() == "true"
+    app.config["SCHEDULER_HOUR"] = int(os.getenv("SCHEDULER_HOUR", "2"))
+    app.config["SCHEDULER_MINUTE"] = int(os.getenv("SCHEDULER_MINUTE", "0"))
+
     # Context processor : injecte le compteur d'anomalies du dernier run dans tous les templates
     @app.context_processor
     def inject_anomaly_badge():
@@ -116,6 +121,10 @@ def create_app():
 
     # ── Commandes CLI Flask ──
     _register_cli_commands(app)
+
+    # ── Scheduler (si active) ──
+    from app.scheduler import init_scheduler
+    init_scheduler(app)
 
     return app
 

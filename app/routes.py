@@ -131,11 +131,13 @@ def inventory():
     vm_type = request.args.get("type", "")
     match = request.args.get("match", "")
     tag = request.args.get("tag", "")
+    role = request.args.get("role", "")
+    zone = request.args.get("zone", "")
     sort = request.args.get("sort", "vm_name")
     order = request.args.get("order", "asc")
     page = request.args.get("page", 1, type=int)
 
-    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
+    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, role, zone, sort, order)
     pagination = query.paginate(page=page, per_page=current_app.config["PER_PAGE"], error_out=False)
 
     filters = {
@@ -143,6 +145,8 @@ def inventory():
         "nodes": [r[0] for r in db.session.query(Asset.node).distinct().all()],
         "types": [r[0] for r in db.session.query(Asset.type).distinct().all()],
         "matches": [r[0] for r in db.session.query(ConsolidatedAsset.match_status).distinct().all()],
+        "roles": sorted([r[0] for r in db.session.query(ConsolidatedAsset.role).filter(ConsolidatedAsset.role.isnot(None)).distinct().all()]),
+        "zones": sorted([r[0] for r in db.session.query(IpamRecord.meta_zone).filter(IpamRecord.meta_zone.isnot(None)).distinct().all()]),
     }
 
     tag_filters = _get_tag_filters()
@@ -151,7 +155,7 @@ def inventory():
         "inventory.html", items=pagination.items, run=last_run, filters=filters,
         pagination=pagination, tag_filters=tag_filters,
         q=q, status=status, node=node, vm_type=vm_type, match=match, tag=tag,
-        sort=sort, order=order,
+        role=role, zone=zone, sort=sort, order=order,
     )
 
 
@@ -169,10 +173,12 @@ def ajax_inventory_search():
     vm_type = request.args.get("type", "")
     match = request.args.get("match", "")
     tag = request.args.get("tag", "")
+    role = request.args.get("role", "")
+    zone = request.args.get("zone", "")
     sort = request.args.get("sort", "vm_name")
     order = request.args.get("order", "asc")
 
-    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, sort, order)
+    query = build_inventory_query(last_run.id, q, status, node, vm_type, match, tag, role, zone, sort, order)
     results = query.limit(100).all()
 
     items = []

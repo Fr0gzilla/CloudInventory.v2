@@ -7,7 +7,8 @@ from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
 
 
 def build_inventory_query(run_id, q="", status="", node="", vm_type="",
-                          match="", tag="", sort="vm_name", order="asc"):
+                          match="", tag="", role="", zone="",
+                          sort="vm_name", order="asc"):
     """Construit la requete inventaire avec filtres et tri."""
     query = (
         db.session.query(ConsolidatedAsset, Asset, IpamRecord)
@@ -35,6 +36,10 @@ def build_inventory_query(run_id, q="", status="", node="", vm_type="",
         query = query.filter(ConsolidatedAsset.match_status == match)
     if tag:
         query = query.filter(Asset.tags.ilike(f"%{tag}%"))
+    if role:
+        query = query.filter(ConsolidatedAsset.role == role)
+    if zone:
+        query = query.filter(IpamRecord.meta_zone == zone)
 
     sort_map = {
         "vm_name": Asset.vm_name,

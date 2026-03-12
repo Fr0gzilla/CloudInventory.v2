@@ -69,6 +69,24 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-6 col-lg-2">
+        <label for="f-role" class="form-label small text-muted mb-1">Role</label>
+        <select id="f-role" name="role" class="form-select form-select-sm">
+          <option value="">Tous</option>
+          {% for r in filters.roles %}
+          <option value="{{ r }}" {% if role == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-lg-2">
+        <label for="f-zone" class="form-label small text-muted mb-1">Meta Zone</label>
+        <select id="f-zone" name="zone" class="form-select form-select-sm">
+          <option value="">Toutes</option>
+          {% for z in filters.zones %}
+          <option value="{{ z }}" {% if zone == z %}selected{% endif %}>{{ z }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <input type="hidden" name="sort" value="{{ sort or 'vm_name' }}">
       <input type="hidden" name="order" value="{{ order or 'asc' }}">
       <div class="col-6 col-lg-1">
@@ -76,7 +94,7 @@
           <i class="bi bi-funnel me-1 d-none d-lg-inline"></i>Filtrer
         </button>
       </div>
-      {% if q or status or node or vm_type or match or tag %}
+      {% if q or status or node or vm_type or match or tag or role or zone %}
       <div class="col-auto">
         <a href="{{ url_for('main.inventory') }}" class="btn btn-outline-secondary btn-sm" title="Effacer filtres">
           <i class="bi bi-x-lg"></i>
@@ -95,7 +113,7 @@
         <tr>
           {% macro sort_header(col, label, extra_class="") %}
           <th class="{{ extra_class }}">
-            <a href="?sort={{ col }}&order={{ 'desc' if sort == col and order == 'asc' else 'asc' }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if node %}&node={{ node }}{% endif %}{% if vm_type %}&type={{ vm_type }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}"
+            <a href="?sort={{ col }}&order={{ 'desc' if sort == col and order == 'asc' else 'asc' }}{% if q %}&q={{ q }}{% endif %}{% if status %}&status={{ status }}{% endif %}{% if node %}&node={{ node }}{% endif %}{% if vm_type %}&type={{ vm_type }}{% endif %}{% if match %}&match={{ match }}{% endif %}{% if tag %}&tag={{ tag }}{% endif %}{% if role %}&role={{ role }}{% endif %}{% if zone %}&zone={{ zone }}{% endif %}"
                class="text-white text-decoration-none d-inline-flex align-items-center gap-1 ci-sort-link">
               {{ label }}
               {% if sort == col %}
@@ -209,6 +227,8 @@
       var vmType = form.querySelector('[name=type]').value;
       var match = form.querySelector('[name=match]').value;
       var tag = form.querySelector('[name=tag]').value;
+      var role = form.querySelector('[name=role]').value;
+      var zone = form.querySelector('[name=zone]').value;
       var sort = form.querySelector('[name=sort]').value;
       var order = form.querySelector('[name=order]').value;
       if (status) params.set('status', status);
@@ -216,6 +236,8 @@
       if (vmType) params.set('type', vmType);
       if (match) params.set('match', match);
       if (tag) params.set('tag', tag);
+      if (role) params.set('role', role);
+      if (zone) params.set('zone', zone);
       if (sort) params.set('sort', sort);
       if (order) params.set('order', order);
 
