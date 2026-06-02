@@ -864,3 +864,127 @@ class TestAlertesAnomalies:
             db.session.commit()
             # Ne doit pas lever d'exception
             _notify_email(run, 5, {"NO_MATCH": 3, "STATUS_MISMATCH": 2})
+
+
+# ! ============================================================
+# ! 14. DUPLICATION DE VM — Clone d'un asset existant
+# ! ============================================================
+
+class TestDuplicationVM:
+    """Verifie la duplication d'une VM : creation conforme, source intacte, anti-doublon."""
+
+    def test_panneau_duplication_prerempli_avec_valeurs_uniques(self, client, app):
+        """GET affiche le panneau avec un vm_id/vm_name par defaut suffixe '-clone'."""
+        _login(client)
+        with app.app_context():
+            src = _create_asset(vm_id="100", vm_name="web-a500")
+            db.session.commit()
+            src_id = src.id
+        resp = client.get(f"/assets/{src_id}/duplicate")
+        assert resp.status_code == 200
+        assert b"100-clone" in resp.data
+        assert b"web-a500-clone" in resp.data
+
+    def test_duplication_cree_nouvelle_vm_et_source_intacte(self, client, app):
+        """Cas passant : la copie reprend le gabarit, reinitialise le runtime, sans muter la source."""
+        _login(client)
+        with app.app_context():
+            src = _create_asset(vm_id="100", vm_name="web-a500", status="running",
+                                node="pve1", vm_type="qemu", tags="env:prod")
+            src.os = "Debian 12"
+            src.cpu_count = 4
+            src.ram_max = 4294967296
+            src.disk_max = 53687091200
+            src.fqdn = "web-a500.domain.local"
+            src.ip_reported = "10.0.0.50"
+            src.annotation = "Serveur web de prod"
+            src.uptime = 123456
+            db.session.commit()
+            src_id = src.id
+
+        resp = client.post(f"/assets/{src_id}/duplicate",
+                           data={"vm_id": "100-clone", "vm_name": "web-a500-clone"},
+                           follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            clone = Asset.query.filter_by(vm_id="100-clone").first()
+            assert clone is not None
+            assert clone.id != src_id  # nouvel id auto-incremente
+            # Regeneres
+            assert clone.vm_name == "web-a500-clone"
+            # Copies tels quels (gabarit)
+            assert clone.type == "qemu"
+            assert clone.node == "pve1"
+            assert clone.tags == "env:prod"
+            assert clone.os == "Debian 12"
+            assert clone.cpu_count == 4
+            assert clone.ram_max == 4294967296
+            assert clone.disk_max == 53687091200
+            # Reinitialises
+            assert clone.status == "stopped"
+            assert clone.ip_reported is None
+            assert clone.fqdn is None
+            assert clone.annotation is None
+            assert clone.cpu_usage is None
+            assert clone.ram_used is None
+            assert clone.disk_used is None
+            assert clone.uptime is None
+
+            # Source jamais modifiee
+            src = Asset.query.get(src_id)
+            assert src.vm_id == "100"
+            assert src.vm_name == "web-a500"
+            assert src.status == "running"
+            assert src.fqdn == "web-a500.domain.local"
+            assert src.ip_reported == "10.0.0.50"
+            assert src.annotation == "Serveur web de prod"
+
+    def test_duplication_doublon_vmid_bloque_et_ne_cree_rien(self, client, app):
+        """Cas doublon vm_id : creation bloquee, avertissement, aucun enregistrement."""
+        _login(client)
+        with app.app_context():
+            src = _create_asset(vm_id="100", vm_name="web-a500")
+            _create_asset(vm_id="200", vm_name="existing-vm")
+            db.session.commit()
+            src_id = src.id
+
+        resp = client.post(f"/assets/{src_id}/duplicate",
+                           data={"vm_id": "200", "vm_name": "nom-libre"})
+        assert resp.status_code == 200
+        assert b"existe" in resp.data  # message d'avertissement
+
+        with app.app_context():
+            # Rien cree : toujours 2 assets, et le nom libre n'a pas ete enregistre
+            assert Asset.query.count() == 2
+            assert Asset.query.filter_by(vm_name="nom-libre").first() is None
+
+    def test_duplication_doublon_vmname_bloque_et_ne_cree_rien(self, client, app):
+        """Cas doublon vm_name : creation bloquee, avertissement, aucun enregistrement."""
+        _login(client)
+        with app.app_context():
+            src = _create_asset(vm_id="100", vm_name="web-a500")
+            _create_asset(vm_id="200", vm_name="existing-vm")
+            db.session.commit()
+            src_id = src.id
+
+        resp = client.post(f"/assets/{src_id}/duplicate",
+                           data={"vm_id": "999", "vm_name": "existing-vm"})
+        assert resp.status_code == 200
+        assert b"existe" in resp.data  # message d'avertissement
+
+        with app.app_context():
+            assert Asset.query.count() == 2
+            assert Asset.query.filter_by(vm_id="999").first() is None
+
+    def test_duplication_source_inexistante_retourne_404(self, client, app):
+        """Cas source inexistante : 404."""
+        _login(client)
+        resp = client.get("/assets/9999/duplicate")
+        assert resp.status_code == 404
+        resp = client.post("/assets/9999/duplicate",
+                           data={"vm_id": "x", "vm_name": "y"})
+        assert resp.status_code == 404
+
+# ! =======================================================
+# ! =======================================================

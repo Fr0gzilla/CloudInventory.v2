@@ -135,6 +135,7 @@
           <th class="d-none d-xl-table-cell">Meta Zone</th>
           <th class="d-none d-xxl-table-cell">Note</th>
           {{ sort_header("match", "Match") }}
+          <th class="text-end">Actions</th>
         </tr>
       </thead>
       <tbody id="inventoryBody">
@@ -163,6 +164,12 @@
             {% elif ca.match_status == 'MATCHED_IP' %}<span class="badge bg-info text-dark">MATCHED (IP)</span>
             {% elif ca.match_status == 'NO_MATCH' %}<span class="badge badge-nomatch">NO MATCH</span>
             {% else %}<span class="badge bg-secondary">{{ ca.match_status }}</span>{% endif %}
+          </td>
+          <td class="text-end">
+            <a href="{{ url_for('main.asset_duplicate', asset_id=asset.id) }}"
+               class="btn btn-sm btn-outline-primary" title="Dupliquer cette VM">
+              <i class="bi bi-files"></i><span class="d-none d-xl-inline ms-1">Dupliquer</span>
+            </a>
           </td>
         </tr>
         {% endfor %}
@@ -263,9 +270,10 @@
               + '<td class="d-none d-xl-table-cell">' + mz + '</td>'
               + '<td class="d-none d-xxl-table-cell"><small>' + (item.annotation || '\u2014') + '</small></td>'
               + '<td>' + mb + '</td>'
+              + '<td class="text-end"><a href="/assets/' + item.id + '/duplicate" class="btn btn-sm btn-outline-primary" title="Dupliquer cette VM"><i class="bi bi-files"></i><span class="d-none d-xl-inline ms-1">Dupliquer</span></a></td>'
               + '</tr>';
           });
-          tbody.innerHTML = html || '<tr><td colspan="11" class="text-muted text-center py-3">Aucun resultat</td></tr>';
+          tbody.innerHTML = html || '<tr><td colspan="12" class="text-muted text-center py-3">Aucun resultat</td></tr>';
           var countEl = document.querySelector('.pagination-sm') ? document.querySelector('.pagination-sm').parentNode : null;
           if (countEl) countEl.innerHTML = '<small class="text-muted">' + data.total + ' resultat(s)</small>';
         });

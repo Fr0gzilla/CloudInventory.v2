@@ -1,6 +1,6 @@
 """Routes Flask — dashboard, runs, inventory, assets, anomalies, AJAX."""
 
-from flask import Blueprint, render_template, redirect, url_for, request, jsonify, Response, current_app
+from flask import Blueprint, render_template, redirect, url_for, request, jsonify, Response, current_app, flash
 from flask_login import login_required
 from app import db
 from app.models import Run, Asset, IpamRecord, ConsolidatedAsset, Anomaly
@@ -244,6 +244,95 @@ def asset_detail(asset_id):
         "asset_detail.html", asset=asset, history=history, anomalies=anomalies
     )
 
+
+# ! ---------- Duplication d'une VM ----------
+def _unique_default(base_value, column):
+    """Génère une valeur unique dérivée de la source : '<base>-clone',
+    puis '<base>-clone-2', '<base>-clone-3'... si déjà prise."""
+    candidate = f"{base_value}-clone"
+    n = 1
+    while db.session.query(Asset.id).filter(column == candidate).first() is not None:
+        n += 1
+        candidate = f"{base_value}-clone-{n}"
+    return candidate
+
+
+@main_bp.route("/assets/<int:asset_id>/duplicate", methods=["GET", "POST"])
+@login_required
+def asset_duplicate(asset_id):
+    """Duplique une VM existante en créant un NOUVEL Asset (la source n'est jamais mutée).
+
+    GET  : affiche le panneau pré-rempli avec des identifiants uniques par défaut.
+    POST : contrôle anti-doublon (vm_id / vm_name) puis crée la nouvelle VM.
+    """
+    source = Asset.query.get_or_404(asset_id)
+
+    if request.method == "POST":
+        new_vm_id = request.form.get("vm_id", "").strip()
+        new_vm_name = request.form.get("vm_name", "").strip()
+
+        def _reshow(warning, conflict_field=None):
+            return render_template(
+                "asset_duplicate.html", source=source,
+                vm_id=new_vm_id, vm_name=new_vm_name,
+                warning=warning, conflict_field=conflict_field,
+            ), 200
+
+        # Champs obligatoires
+        if not new_vm_id or not new_vm_name:
+            return _reshow("Le VM ID et le nom sont obligatoires.")
+
+        # Contrôle anti-doublon : aucune correction automatique, on bloque.
+        if Asset.query.filter_by(vm_id=new_vm_id).first() is not None:
+            return _reshow(
+                f"Le VM ID « {new_vm_id} » existe déjà. Modifiez-le avant de valider.",
+                conflict_field="vm_id",
+            )
+        if Asset.query.filter_by(vm_name=new_vm_name).first() is not None:
+            return _reshow(
+                f"Le nom « {new_vm_name} » existe déjà. Modifiez-le avant de valider.",
+                conflict_field="vm_name",
+            )
+
+        # Création d'un nouvel objet (id en auto-incrément).
+        clone = Asset(
+            # Régénérés (uniques, valeurs saisies par l'utilisateur)
+            vm_id=new_vm_id,
+            vm_name=new_vm_name,
+            # Copiés tels quels (gabarit)
+            type=source.type,
+            node=source.node,
+            tags=source.tags,
+            os=source.os,
+            cpu_count=source.cpu_count,
+            ram_max=source.ram_max,
+            disk_max=source.disk_max,
+            # Réinitialisés
+            status="stopped",
+            ip_reported=None,
+            fqdn=None,
+            annotation=None,
+            cpu_usage=None,
+            ram_used=None,
+            disk_used=None,
+            uptime=None,
+        )
+        db.session.add(clone)
+        db.session.commit()
+        flash(
+            f"VM « {clone.vm_name} » créée par duplication de « {source.vm_name} ».",
+            "success",
+        )
+        return redirect(url_for("main.asset_detail", asset_id=clone.id))
+
+    # GET : panneau pré-rempli avec des valeurs uniques par défaut (modifiables).
+    return render_template(
+        "asset_duplicate.html", source=source,
+        vm_id=_unique_default(source.vm_id, Asset.vm_id),
+        vm_name=_unique_default(source.vm_name, Asset.vm_name),
+    )
+
+# ! ---------- Duplication d'une VM ----------
 
 # ---------- Page anomalies (avec pagination) ----------
 @main_bp.route("/anomalies")

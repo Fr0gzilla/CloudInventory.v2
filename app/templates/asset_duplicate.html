@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Dupliquer {{ source.vm_name }} — CloudInventory{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+  <a href="{{ url_for('main.inventory') }}" class="btn btn-sm btn-outline-secondary" title="Retour inventaire">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h1 class="mb-0"><i class="bi bi-files me-2"></i>Dupliquer une VM</h1>
+</div>
+
+<p class="text-muted">
+  Nouvelle VM créée à partir de
+  <a href="{{ url_for('main.asset_detail', asset_id=source.id) }}" class="text-decoration-none fw-semibold">{{ source.vm_name }}</a>
+  <span class="badge bg-info text-dark">{{ source.type }}</span>.
+  La VM source n'est pas modifiée.
+</p>
+
+{% if warning %}
+<div class="alert alert-warning d-flex align-items-center" role="alert">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <div>{{ warning }}</div>
+</div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('main.asset_duplicate', asset_id=source.id) }}">
+  <!-- Champs régénérés (modifiables) -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="bi bi-pencil-square me-1"></i>Identifiants de la nouvelle VM</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12 col-md-6">
+          <label for="vm_id" class="form-label">VM ID <span class="text-danger">*</span></label>
+          <input type="text" class="form-control {% if conflict_field == 'vm_id' %}is-invalid{% endif %}"
+                 id="vm_id" name="vm_id" value="{{ vm_id }}" required autocomplete="off">
+          {% if conflict_field == 'vm_id' %}
+          <div class="invalid-feedback">Cet identifiant est déjà utilisé.</div>
+          {% else %}
+          <small class="text-muted">Doit être unique. Défaut dérivé de la source.</small>
+          {% endif %}
+        </div>
+        <div class="col-12 col-md-6">
+          <label for="vm_name" class="form-label">Nom (hostname) <span class="text-danger">*</span></label>
+          <input type="text" class="form-control {% if conflict_field == 'vm_name' %}is-invalid{% endif %}"
+                 id="vm_name" name="vm_name" value="{{ vm_name }}" required autocomplete="off">
+          {% if conflict_field == 'vm_name' %}
+          <div class="invalid-feedback">Ce nom est déjà utilisé.</div>
+          {% else %}
+          <small class="text-muted">Doit être unique. Défaut dérivé de la source.</small>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Champs copiés tels quels (gabarit, lecture seule) -->
+  <div class="card mb-4">
+    <div class="card-header"><i class="bi bi-clipboard-check me-1"></i>Caractéristiques copiées (gabarit)</div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-6 col-md-3">
+          <small class="text-muted d-block">Type</small>
+          <span class="badge bg-info text-dark">{{ source.type or '—' }}</span>
+        </div>
+        <div class="col-6 col-md-3">
+          <small class="text-muted d-block">Node</small>
+          <strong>{{ source.node or '—' }}</strong>
+        </div>
+        <div class="col-6 col-md-3">
+          <small class="text-muted d-block">OS</small>
+          <strong>{{ source.os or '—' }}</strong>
+        </div>
+        <div class="col-6 col-md-3">
+          <small class="text-muted d-block">vCPU</small>
+          <strong>{{ source.cpu_count or '—' }}</strong>
+        </div>
+        <div class="col-6 col-md-3">
+          <small class="text-muted d-block">RAM max</small>
+          <strong>{% if source.ram_max %}{{ (source.ram_max / 1073741824)|round(1) }} Go{% else %}—{% endif %}</strong>
+        </div>
+        <div class="col-6 col-md-3">
+          <small class="text-muted d-block">Disque max</small>
+          <strong>{% if source.disk_max %}{{ (source.disk_max / 1073741824)|round(1) }} Go{% else %}—{% endif %}</strong>
+        </div>
+        <div class="col-12">
+          <small class="text-muted d-block">Tags</small>
+          {% if source.tags %}
+            {% for tag in source.tags.split(',') %}
+            <span class="badge bg-dark bg-opacity-10 text-body me-1">{{ tag.strip() }}</span>
+            {% endfor %}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Champs réinitialisés (information) -->
+  <div class="alert alert-light border d-flex align-items-start" role="alert">
+    <i class="bi bi-info-circle me-2 mt-1"></i>
+    <div class="small">
+      <strong>Champs réinitialisés sur la copie :</strong>
+      statut → <span class="badge bg-secondary">stopped</span>,
+      IP / FQDN / annotation vidés, métriques runtime (CPU, RAM, disque, uptime) remises à zéro.
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-check-lg me-1"></i>Valider
+    </button>
+    <a href="{{ url_for('main.inventory') }}" class="btn btn-outline-secondary">Annuler</a>
+  </div>
+</form>
+{% endblock %}
