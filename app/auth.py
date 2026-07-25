@@ -15,8 +15,16 @@ login_manager.login_message_category = "warning"
 
 
 def _get_admin_password_hash():
-    """Retourne le hash du mot de passe admin (hashé à la volée depuis .env)."""
-    raw = os.getenv("ADMIN_PASSWORD", "admin")
+    """Retourne le hash du mot de passe admin (hashé à la volée depuis .env).
+
+    Aucune valeur par défaut : un déploiement qui oublie ADMIN_PASSWORD doit
+    échouer (fail-closed) plutôt que d'accepter admin/admin.
+    """
+    raw = os.getenv("ADMIN_PASSWORD")
+    if not raw:
+        raise RuntimeError(
+            "ADMIN_PASSWORD doit être défini (valeur forte ou hash pbkdf2/scrypt werkzeug)."
+        )
     # Si la variable commence par un préfixe werkzeug, c'est déjà un hash
     if raw.startswith(("pbkdf2:", "scrypt:")):
         return raw

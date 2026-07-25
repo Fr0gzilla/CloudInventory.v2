@@ -29,7 +29,9 @@ def _get_tag_filters():
 @main_bp.route("/")
 @login_required
 def dashboard():
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    # Dernier run RÉUSSI : un run FAIL n'a pas de données consolidées et afficherait
+    # un tableau de bord vide alors que le dernier bon snapshot est intact.
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     total_runs = Run.query.count()
     total_assets = Asset.query.count()
     total_anomalies = 0
@@ -120,7 +122,7 @@ def run_detail(run_id):
 @main_bp.route("/inventory")
 @login_required
 def inventory():
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     if not last_run:
         return render_template("inventory.html", items=[], run=None, filters={},
                                pagination=None, tag_filters={})
@@ -163,7 +165,7 @@ def inventory():
 @main_bp.route("/ajax/inventory/search")
 @login_required
 def ajax_inventory_search():
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     if not last_run:
         return jsonify({"items": [], "total": 0})
 
@@ -205,7 +207,7 @@ def ajax_inventory_search():
 @main_bp.route("/inventory/export")
 @login_required
 def inventory_export():
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     if not last_run:
         return "Aucun run", 404
 

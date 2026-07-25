@@ -82,7 +82,15 @@ def fetch_proxmox_vms():
         list[dict]: Liste de dicts compatibles avec le format attendu par _upsert_assets().
     """
     session, base_url = _get_session()
+    try:
+        return _collect_proxmox_vms(session, base_url)
+    finally:
+        # Fermer la session pour libérer le pool de connexions urllib3.
+        session.close()
 
+
+def _collect_proxmox_vms(session, base_url):
+    """Collecte effective des VM/CT (session gérée par l'appelant)."""
     # 1. Lister les nœuds du cluster
     resp = session.get(f"{base_url}/api2/json/nodes", timeout=15)
     resp.raise_for_status()

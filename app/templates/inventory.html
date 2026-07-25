@@ -252,23 +252,30 @@
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (!data.items) return;
+          // \u00c9chappement HTML : ces valeurs viennent de Proxmox/NetBox (noms de VM, DNS,
+          // annotations...) et sont inject\u00e9es via innerHTML \u2192 risque de XSS stock\u00e9.
+          function esc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+              return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+            });
+          }
           var html = '';
           data.items.forEach(function(item) {
             var rc = item.match_status === 'NO_MATCH' ? 'table-danger' : (item.match_status === 'MATCHED_NAME' ? 'table-success' : (item.match_status === 'MATCHED_FQDN' ? 'table-warning' : (item.match_status === 'MATCHED_IP' ? 'table-info' : '')));
-            var sb = item.status === 'running' ? '<span class="badge bg-success">running</span>' : '<span class="badge bg-secondary">' + item.status + '</span>';
-            var mz = item.meta_zone ? '<span class="badge bg-dark bg-opacity-10 text-body">' + item.meta_zone + '</span>' : '\u2014';
-            var mb = item.match_status === 'MATCHED_NAME' ? '<span class="badge badge-matched">MATCHED (nom)</span>' : (item.match_status === 'MATCHED_FQDN' ? '<span class="badge ci-badge-purple">MATCHED (FQDN)</span>' : (item.match_status === 'MATCHED_IP' ? '<span class="badge bg-info text-dark">MATCHED (IP)</span>' : (item.match_status === 'NO_MATCH' ? '<span class="badge badge-nomatch">NO MATCH</span>' : '<span class="badge bg-secondary">' + item.match_status + '</span>')));
+            var sb = item.status === 'running' ? '<span class="badge bg-success">running</span>' : '<span class="badge bg-secondary">' + esc(item.status) + '</span>';
+            var mz = item.meta_zone ? '<span class="badge bg-dark bg-opacity-10 text-body">' + esc(item.meta_zone) + '</span>' : '\u2014';
+            var mb = item.match_status === 'MATCHED_NAME' ? '<span class="badge badge-matched">MATCHED (nom)</span>' : (item.match_status === 'MATCHED_FQDN' ? '<span class="badge ci-badge-purple">MATCHED (FQDN)</span>' : (item.match_status === 'MATCHED_IP' ? '<span class="badge bg-info text-dark">MATCHED (IP)</span>' : (item.match_status === 'NO_MATCH' ? '<span class="badge badge-nomatch">NO MATCH</span>' : '<span class="badge bg-secondary">' + esc(item.match_status) + '</span>')));
             html += '<tr class="' + rc + '">'
-              + '<td><a href="/assets/' + item.id + '" class="fw-semibold text-decoration-none">' + item.vm_name + '</a></td>'
-              + '<td class="d-none d-md-table-cell"><small>' + (item.node || '\u2014') + '</small></td>'
+              + '<td><a href="/assets/' + encodeURIComponent(item.id) + '" class="fw-semibold text-decoration-none">' + esc(item.vm_name) + '</a></td>'
+              + '<td class="d-none d-md-table-cell"><small>' + (item.node ? esc(item.node) : '\u2014') + '</small></td>'
               + '<td>' + sb + '</td>'
-              + '<td class="d-none d-lg-table-cell"><span class="badge bg-info text-dark">' + (item.type || '\u2014') + '</span></td>'
-              + '<td><code class="small">' + (item.ip || '\u2014') + '</code></td>'
-              + '<td class="d-none d-lg-table-cell"><small>' + (item.fqdn || '\u2014') + '</small></td>'
-              + '<td class="d-none d-xl-table-cell"><small>' + (item.os || '\u2014') + '</small></td>'
-              + '<td class="d-none d-xl-table-cell"><small>' + (item.role || 'Ind\u00e9termin\u00e9') + '</small></td>'
+              + '<td class="d-none d-lg-table-cell"><span class="badge bg-info text-dark">' + (item.type ? esc(item.type) : '\u2014') + '</span></td>'
+              + '<td><code class="small">' + (item.ip ? esc(item.ip) : '\u2014') + '</code></td>'
+              + '<td class="d-none d-lg-table-cell"><small>' + (item.fqdn ? esc(item.fqdn) : '\u2014') + '</small></td>'
+              + '<td class="d-none d-xl-table-cell"><small>' + (item.os ? esc(item.os) : '\u2014') + '</small></td>'
+              + '<td class="d-none d-xl-table-cell"><small>' + (item.role ? esc(item.role) : 'Ind\u00e9termin\u00e9') + '</small></td>'
               + '<td class="d-none d-xl-table-cell">' + mz + '</td>'
-              + '<td class="d-none d-xxl-table-cell"><small>' + (item.annotation || '\u2014') + '</small></td>'
+              + '<td class="d-none d-xxl-table-cell"><small>' + (item.annotation ? esc(item.annotation) : '\u2014') + '</small></td>'
               + '<td>' + mb + '</td>'
               + '<td class="text-end"><a href="/assets/' + item.id + '/duplicate" class="btn btn-sm btn-outline-primary" title="Dupliquer cette VM"><i class="bi bi-files"></i><span class="d-none d-xl-inline ms-1">Dupliquer</span></a></td>'
               + '</tr>';

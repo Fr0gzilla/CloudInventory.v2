@@ -15,3 +15,7 @@ mdpdf.log
 *.pdf
 exports/
 cookies.txt
+.venv/
+node_modules/
+.next/
+out/

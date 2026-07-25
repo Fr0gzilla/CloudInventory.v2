@@ -5,13 +5,11 @@ services:
     build: .
     ports:
       - "5050:5050"
-    environment:
-      - SECRET_KEY=change-me-in-production
-      - JWT_SECRET_KEY=change-me-in-production
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=admin
-      - DATABASE_URL=sqlite:///cloudinventory.db
-      - USE_MOCK_IPAM=true
+    # Secrets et identifiants : jamais en clair ici. Copier .env.example en .env
+    # (non versionné) puis y définir SECRET_KEY, JWT_SECRET_KEY, ADMIN_PASSWORD.
+    # Générer les clés : python -c "import secrets; print(secrets.token_hex(32))"
+    env_file:
+      - .env
     volumes:
       - db-data:/app/instance
     restart: unless-stopped

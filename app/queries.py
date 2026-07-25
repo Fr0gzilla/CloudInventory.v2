@@ -98,7 +98,8 @@ def serialize_inventory_item(ca, asset, ipam):
 
 def get_stats_data():
     """Calcule les statistiques du dashboard (partage web + API)."""
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    # Dernier run RÉUSSI : un run FAIL n'a pas de compteurs et fausserait les stats.
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     if not last_run:
         return {"has_data": False}
 
@@ -167,6 +168,10 @@ def export_inventory_csv(run_id):
         "Uptime (s)", "Match", "Source",
     ])
     for ca, asset, ipam in rows:
+        # Distinguer un 0% réel d'une donnée manquante : ne pas utiliser `or ""`
+        # qui écraserait un pourcentage légitimement nul en cellule vide.
+        rp = ram_percent(asset)
+        dp = disk_percent(asset)
         writer.writerow([
             asset.vm_name, asset.node, asset.status, asset.type,
             ca.ip_final or "", asset.fqdn or "",
@@ -176,7 +181,7 @@ def export_inventory_csv(run_id):
             ipam.site if ipam else "",
             ipam.meta_zone if ipam else "",
             asset.cpu_usage if asset.cpu_usage is not None else "",
-            ram_percent(asset) or "", disk_percent(asset) or "",
+            rp if rp is not None else "", dp if dp is not None else "",
             asset.uptime if asset.uptime is not None else "",
             ca.match_status, ca.source_ip_dns,
         ])

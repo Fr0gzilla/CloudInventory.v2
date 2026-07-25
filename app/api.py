@@ -29,17 +29,12 @@ def api_health():
       - Health
     responses:
       200:
-        description: Statut de l'application et dernier run
+        description: Signal de liveness de l'application
     """
+    # Endpoint public : uniquement un signal de liveness. Les détails du dernier run
+    # et du scheduler (reconnaissance/timing) restent derrière /api/stats (JWT).
     from app import APP_VERSION
-    from app.scheduler import get_scheduler_info
-    last_run = Run.query.order_by(Run.id.desc()).first()
-    return jsonify({
-        "status": "ok",
-        "version": APP_VERSION,
-        "last_run": last_run.to_dict() if last_run else None,
-        "scheduler": get_scheduler_info(),
-    })
+    return jsonify({"status": "ok", "version": APP_VERSION})
 
 
 # ──────────────────────────────────────────────
@@ -362,7 +357,9 @@ def api_inventory():
       200:
         description: Liste paginee de l'inventaire
     """
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    # Inventaire courant = dernier run RÉUSSI (un run FAIL n'a aucune ligne consolidée
+    # et viderait la vue alors que le dernier bon snapshot est intact en base).
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     if not last_run:
         return jsonify({"items": [], "total": 0, "page": 1, "pages": 0})
 
@@ -410,7 +407,7 @@ def api_inventory_export():
       404:
         description: Aucun run disponible
     """
-    last_run = Run.query.order_by(Run.id.desc()).first()
+    last_run = Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
     if not last_run:
         return jsonify({"error": "Aucun run disponible"}), 404
 

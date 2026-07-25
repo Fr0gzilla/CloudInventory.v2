@@ -4,6 +4,7 @@ from datetime import timedelta
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_jwt_extended import JWTManager  # [API] Authentification JWT pour l'API REST
+from flask_wtf import CSRFProtect           # Protection CSRF des formulaires web
 from flasgger import Swagger                # [API] Documentation Swagger / OpenAPI
 from dotenv import load_dotenv
 
@@ -12,6 +13,7 @@ load_dotenv()
 APP_VERSION = "2.1"
 
 db = SQLAlchemy()
+csrf = CSRFProtect()
 
 # Logging applicatif
 logging.basicConfig(
@@ -24,12 +26,19 @@ logger = logging.getLogger("cloudinventory")
 def create_app():
     app = Flask(__name__)
 
-    # Sécurité : SECRET_KEY obligatoire en production
+    # Sécurité : SECRET_KEY obligatoire — jamais de repli sur une constante connue.
+    # Un repli silencieux publierait la clé de signature des cookies de session ET du JWT.
+    _testing = app.testing or os.getenv("PYTEST_CURRENT_TEST") is not None
+    _weak_secrets = ("change-me", "change-me-in-production", "dev-only-insecure-key")
     secret = os.getenv("SECRET_KEY", "")
-    if not secret or secret == "change-me":
-        if not app.debug and not app.testing:
-            logger.warning("SECRET_KEY non définie ou par défaut — à changer en production !")
-        secret = secret or "dev-only-insecure-key"
+    if not secret or secret in _weak_secrets:
+        if _testing:
+            secret = "test-key"
+        else:
+            raise RuntimeError(
+                "SECRET_KEY doit être défini sur une valeur aléatoire forte "
+                "(python -c \"import secrets; print(secrets.token_hex(32))\")."
+            )
     app.config["SECRET_KEY"] = secret
 
     app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
@@ -40,14 +49,36 @@ def create_app():
     # PER_PAGE centralisé
     app.config["PER_PAGE"] = int(os.getenv("PER_PAGE", "25"))
 
-    # [API] config de la clé secrète JWT + expiration explicite
-    app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", app.config["SECRET_KEY"])
+    # Durcissement du cookie de session (HTTPS/anti-vol/anti-CSRF).
+    # SESSION_COOKIE_SECURE reste activable en dev HTTP via l'env (défaut : True).
+    _cookie_secure = (
+        os.getenv("SESSION_COOKIE_SECURE", "true").lower() == "true" and not _testing
+    )
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=_cookie_secure,
+        REMEMBER_COOKIE_SECURE=_cookie_secure,
+        REMEMBER_COOKIE_HTTPONLY=True,
+    )
+
+    # [API] config de la clé secrète JWT + expiration explicite.
+    # Ne jamais réutiliser silencieusement SECRET_KEY en production.
+    jwt_secret = os.getenv("JWT_SECRET_KEY", "")
+    if not jwt_secret or jwt_secret in _weak_secrets:
+        if not _testing:
+            raise RuntimeError(
+                "JWT_SECRET_KEY doit être défini (ne pas réutiliser SECRET_KEY)."
+            )
+        jwt_secret = secret
+    app.config["JWT_SECRET_KEY"] = jwt_secret
     app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(
         hours=int(os.getenv("JWT_EXPIRATION_HOURS", "1"))
     )
 
     db.init_app(app)
     JWTManager(app)  # [API] Initialisation du JWT
+    csrf.init_app(app)  # Protection CSRF (formulaires web ; l'API JWT est exemptée plus bas)
 
     # [API] Documentation Swagger accessible sur /apidocs
     Swagger(app, template={
@@ -76,6 +107,8 @@ def create_app():
     # [API] Enregistrement du blueprint API REST (/api/...)
     from app.api import api_bp
     app.register_blueprint(api_bp)
+    # L'API s'authentifie via l'en-tête JWT (pas de cookie) : exemptée de CSRF.
+    csrf.exempt(api_bp)
 
     app.jinja_env.globals["APP_VERSION"] = APP_VERSION
 
@@ -109,7 +142,10 @@ def create_app():
     @app.context_processor
     def inject_anomaly_badge():
         from app.models import Run, Anomaly
-        last_run = Run.query.order_by(Run.id.desc()).first()
+        # Dernier run RÉUSSI : un run FAIL n'a pas d'anomalies et masquerait le badge.
+        last_run = (
+            Run.query.filter_by(status="SUCCESS").order_by(Run.id.desc()).first()
+        )
         if last_run:
             count = Anomaly.query.filter_by(run_id=last_run.id).count()
             return {"navbar_anomaly_count": count, "navbar_last_run_id": last_run.id}

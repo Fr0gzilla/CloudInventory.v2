@@ -4,6 +4,7 @@ Inspiré de l'étude de faisabilité CloudInventory v2 (vCenter + EfficientIP),
 adapté pour Proxmox VE + NetBox dans le cadre du BTS SIO SLAM.
 """
 
+import html
 import logging
 import os
 import re
@@ -73,23 +74,25 @@ def _notify_email(run, anomaly_count, anomaly_details):
         }
 
         # Lignes du tableau anomalies
+        # Échappement HTML obligatoire : type/vm_name/details dérivent de données amont
+        # (noms de VM Proxmox, dns_name NetBox) → sinon injection HTML dans l'email.
         anomaly_table_rows = ""
         for anomaly, asset in anomaly_rows:
             bg, fg = type_colors.get(anomaly.type, ("#6c757d", "#fff"))
             anomaly_table_rows += f"""
             <tr>
               <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;">
-                <span style="background:{bg};color:{fg};padding:2px 8px;border-radius:4px;font-size:12px;">{anomaly.type}</span>
+                <span style="background:{bg};color:{fg};padding:2px 8px;border-radius:4px;font-size:12px;">{html.escape(anomaly.type or '')}</span>
               </td>
-              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;font-weight:600;">{asset.vm_name}</td>
-              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;color:#6c757d;font-size:13px;">{anomaly.details or ''}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;font-weight:600;">{html.escape(asset.vm_name or '')}</td>
+              <td style="padding:8px 12px;border-bottom:1px solid #e9ecef;color:#6c757d;font-size:13px;">{html.escape(anomaly.details or '')}</td>
             </tr>"""
 
         # Badges résumé par type
         type_badges = ""
         for atype, acount in anomaly_details.items():
             bg, fg = type_colors.get(atype, ("#6c757d", "#fff"))
-            type_badges += f'<span style="display:inline-block;background:{bg};color:{fg};padding:4px 10px;border-radius:12px;font-size:13px;margin:3px 6px 3px 0;">{atype}: {acount}</span> '
+            type_badges += f'<span style="display:inline-block;background:{bg};color:{fg};padding:4px 10px;border-radius:12px;font-size:13px;margin:3px 6px 3px 0;">{html.escape(str(atype))}: {acount}</span> '
 
         # Calcul du taux de matching
         total_vms = run.vm_count or 0
@@ -259,7 +262,9 @@ def _deduce_role(hostname, tags=None):
     """
     if not hostname:
         return "Indéterminé"
-    match = re.search(r"([a-zA-Z])(\d{3})", hostname)
+    # Lettre suivie d'EXACTEMENT 3 chiffres (code fonctionnel), pas d'un nombre plus long :
+    # évite que 'srv2020' matche 'v'+'202' → rôle erroné.
+    match = re.search(r"(?<![A-Za-z])([a-zA-Z])(\d{3})(?!\d)", hostname)
     if match:
         letter = match.group(1).lower()
         if letter in ROLE_MAP:
@@ -328,7 +333,14 @@ def _upsert_assets(vm_list):
 
 
 def _upsert_ipam_records(records):
-    """Insère ou met à jour les IPAM records (upsert sur ip + dns_name)."""
+    """Insère ou met à jour les IPAM records (upsert sur ip + dns_name).
+
+    Retourne la liste des IpamRecord correspondant EXACTEMENT au fetch courant, afin
+    que la consolidation et la détection d'anomalies ne travaillent que sur l'état
+    actuel de NetBox (et non sur toutes les lignes jamais vues, qui accumulent des
+    doublons obsolètes et fabriquent de faux DUPLICATE_IP / DUPLICATE_DNS).
+    """
+    current = []
     for rec in records:
         ipam = IpamRecord.query.filter_by(
             ip=rec["ip"], dns_name=rec["dns_name"]
@@ -348,7 +360,9 @@ def _upsert_ipam_records(records):
                 meta_zone=rec.get("meta_zone"),
             )
             db.session.add(ipam)
+        current.append(ipam)
     db.session.flush()
+    return current
 
 
 def _detect_ipam_anomalies(run, ipam_records=None):
@@ -366,8 +380,11 @@ def _detect_ipam_anomalies(run, ipam_records=None):
         if count > 1:
             dupes = [r for r in ipam_records if r.dns_name and r.dns_name.strip().lower() == dns]
             ips = ", ".join(d.ip for d in dupes)
+            # Comparer sur le hostname court normalisé : les dns_name NetBox sont souvent
+            # des FQDN ('web.corp.local') alors que vm_name est court ('web').
+            short = _normalize_hostname(dns)
             asset = Asset.query.filter(
-                db.func.lower(Asset.vm_name) == dns
+                db.func.lower(Asset.vm_name) == short
             ).first()
             if asset:
                 db.session.add(Anomaly(
@@ -375,6 +392,8 @@ def _detect_ipam_anomalies(run, ipam_records=None):
                     type="DUPLICATE_DNS",
                     details=f"DNS '{dns}' présent {count} fois dans NetBox (IPs: {ips})",
                 ))
+            else:
+                logger.warning("DUPLICATE_DNS '%s' sans asset correspondant — anomalie non rattachée", dns)
 
     # DUPLICATE_IP : plusieurs IPAM records avec la même IP
     ip_counter = Counter(r.ip for r in ipam_records if r.ip)
@@ -529,7 +548,9 @@ def run_inventory():
     run = Run(status="RUNNING")
     db.session.add(run)
     db.session.flush()
-    logger.info("Run #%d démarré", run.id)
+    run_id = run.id
+    started_at = run.started_at
+    logger.info("Run #%d démarré", run_id)
 
     try:
         # 1. Collecte virtualisation (mock ou Proxmox)
@@ -548,16 +569,16 @@ def run_inventory():
             ipam_raw = fetch_mock_ipam()
         else:
             ipam_raw = fetch_ipam_records()
-        _upsert_ipam_records(ipam_raw)
 
-        # 3. Charger les IPAM records en base (une seule fois, partagé)
-        all_ipam = IpamRecord.query.all()
+        # 3. Upsert IPAM — on ne garde QUE les enregistrements du fetch courant
+        #    (pas IpamRecord.query.all() qui inclut des lignes obsolètes accumulées).
+        current_ipam = _upsert_ipam_records(ipam_raw)
 
         # 4. Consolidation + anomalies de match (multi-stratégie)
-        matched_name, matched_fqdn, matched_ip, no_match = _consolidate(run, all_ipam)
+        matched_name, matched_fqdn, matched_ip, no_match = _consolidate(run, current_ipam)
 
-        # 5. Anomalies IPAM (duplicates) — réutilise la même liste
-        _detect_ipam_anomalies(run, all_ipam)
+        # 5. Anomalies IPAM (duplicates) — sur le même état courant
+        _detect_ipam_anomalies(run, current_ipam)
 
         # 6. Compteurs
         run.vm_count = len(vm_list)
@@ -573,7 +594,21 @@ def run_inventory():
         logger.info("Run #%d terminé — %d matched_name, %d matched_fqdn, %d matched_ip, %d no_match",
                      run.id, matched_name, matched_fqdn, matched_ip, no_match)
 
-        # 7. Notifications si anomalies détectées
+    except Exception as e:
+        logger.error("Run #%d échoué : %s", run_id, e, exc_info=True)
+        db.session.rollback()
+        # Réutiliser le MÊME id de run (le rollback a annulé la ligne RUNNING flushée) :
+        # les logs '#N' restent cohérents et les appelants reçoivent l'id d'origine.
+        fail_run = Run(id=run_id, status="FAIL", error_message=str(e),
+                       started_at=started_at, ended_at=datetime.now(timezone.utc))
+        db.session.add(fail_run)
+        db.session.commit()
+        return fail_run
+
+    # ── Post-commit (uniquement après un run SUCCESS) ──
+    # Hors du try qui possède la création du run FAIL : un échec de notification/export
+    # ne doit PAS fabriquer un second run FAIL en doublon du SUCCESS déjà committé.
+    try:
         anomaly_stats = (
             db.session.query(Anomaly.type, db.func.count(Anomaly.id))
             .filter(Anomaly.run_id == run.id)
@@ -584,22 +619,14 @@ def run_inventory():
         anomaly_count = sum(anomaly_details.values())
         _notify_webhook(run, anomaly_count)
         _notify_email(run, anomaly_count, anomaly_details)
+    except Exception as notif_err:
+        logger.warning("Echec notification : %s", notif_err)
+        anomaly_details = {}
 
-        # 8. Exports (consolidé JSONL.gz, rapport MD, bruts JSON.gz)
-        try:
-            from collector.exporter import run_exports
-            run_exports(run.id, anomaly_details, vm_list=vm_list, ipam_list=ipam_raw)
-        except Exception as export_err:
-            logger.warning("Echec exports : %s", export_err)
-
-    except Exception as e:
-        logger.error("Run #%d échoué : %s", run.id, e, exc_info=True)
-        db.session.rollback()
-        # Recréer le run en échec dans une transaction propre
-        fail_run = Run(status="FAIL", error_message=str(e),
-                       ended_at=datetime.now(timezone.utc))
-        db.session.add(fail_run)
-        db.session.commit()
-        return fail_run
+    try:
+        from collector.exporter import run_exports
+        run_exports(run.id, anomaly_details, vm_list=vm_list, ipam_list=ipam_raw)
+    except Exception as export_err:
+        logger.warning("Echec exports : %s", export_err)
 
     return run

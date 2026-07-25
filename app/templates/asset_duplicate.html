@@ -24,6 +24,7 @@
 {% endif %}
 
 <form method="POST" action="{{ url_for('main.asset_duplicate', asset_id=source.id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <!-- Champs régénérés (modifiables) -->
   <div class="card mb-4">
     <div class="card-header"><i class="bi bi-pencil-square me-1"></i>Identifiants de la nouvelle VM</div>

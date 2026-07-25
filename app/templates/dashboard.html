@@ -178,6 +178,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script>
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
 function launchRun() {
   var btn = document.getElementById('btn-run');
   var loading = document.getElementById('run-loading');
@@ -186,7 +191,7 @@ function launchRun() {
   loading.classList.remove('d-none');
   result.classList.add('d-none');
 
-  fetch('{{ url_for("main.ajax_trigger_run") }}', {method: 'POST'})
+  fetch('{{ url_for("main.ajax_trigger_run") }}', {method: 'POST', headers: {'X-CSRFToken': '{{ csrf_token() }}'}})
     .then(function(r) { return r.json(); })
     .then(function(data) {
       loading.classList.add('d-none');
@@ -198,7 +203,7 @@ function launchRun() {
           data.no_match_count + ' no match. <a href="/runs/' + data.id + '">Voir le détail</a>';
       } else {
         result.className = 'alert alert-danger';
-        result.innerHTML = '<i class="bi bi-x-circle me-1"></i>Run #' + data.id + ' échoué : ' + (data.error_message || 'Erreur inconnue');
+        result.innerHTML = '<i class="bi bi-x-circle me-1"></i>Run #' + esc(data.id) + ' échoué : ' + esc(data.error_message || 'Erreur inconnue');
       }
       result.classList.remove('d-none');
       btn.disabled = false;
